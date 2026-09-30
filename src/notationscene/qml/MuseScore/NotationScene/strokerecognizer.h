@@ -41,12 +41,17 @@ public:
     // list of points in score/canvas coords) and applies the returned intents.
     // Returns the number of intents applied (0 if nothing was recognized or neume
     // is unavailable). `spatium` sets the recognition scale. When `additive`, a
-    // lasso ADDs to the current selection instead of replacing it.
+    // lasso ADDs to the current selection instead of replacing it. Also auto-logs
+    // each classified, applied symbol as an "accepted" correction sample (the
+    // flywheel's unverified-positive path) via `neume record`.
     int recognizeAndApply(const std::vector<std::vector<muse::PointF> >& strokes, const INotationPtr& notation,
                           double spatium, bool additive = false);
 
 private:
     QByteArray runNeume(const QByteArray& inputJson) const;
+
+    // Send a correction record (schema-1 JSON) to `neume record`. Returns true on ack.
+    bool recordCorrection(const QByteArray& recordJson) const;
 };
 }
 

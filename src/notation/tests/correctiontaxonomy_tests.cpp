@@ -46,3 +46,12 @@ TEST(Notation_CorrectionTaxonomy, CaptureOnlyMarkingHasNoHomusLabel)
     EXPECT_FALSE(o.contains("model_label"));
     EXPECT_EQ(o.value("kind").toString(), QString("attached"));
 }
+
+TEST(Notation_CorrectionTaxonomy, RestsAreInVocabAndRoundTrip)
+{
+    const TaxonEntry* e = taxonByHomusLabel("Quarter-Rest");
+    ASSERT_NE(e, nullptr);
+    EXPECT_EQ(e->group, QString("Rests"));
+    EXPECT_EQ(e->applyKind, QString("note-input"));
+    EXPECT_EQ(taxonLabelObject(*e).value("model_label").toString(), QString("Quarter-Rest"));
+}

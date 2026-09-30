@@ -19,12 +19,12 @@ TEST(Notation_PendingRecognition, AddFindClear)
     reg.add(p);
 
     EXPECT_EQ(reg.size(), 1);
-    ASSERT_NE(reg.find(elA), nullptr);
+    ASSERT_TRUE(reg.find(elA).has_value());
     EXPECT_EQ(reg.find(elA)->recognized.label, QString("Quarter-Note"));
-    EXPECT_EQ(reg.find(elB), nullptr);
-    EXPECT_EQ(reg.find(nullptr), nullptr);
+    EXPECT_FALSE(reg.find(elB).has_value());
+    EXPECT_FALSE(reg.find(nullptr).has_value());
 
     reg.clear();
     EXPECT_EQ(reg.size(), 0);
-    EXPECT_EQ(reg.find(elA), nullptr);
+    EXPECT_FALSE(reg.find(elA).has_value());
 }
