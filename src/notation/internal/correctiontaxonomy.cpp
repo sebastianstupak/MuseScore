@@ -19,6 +19,13 @@ const QList<TaxonEntry>& mu::notation::taxonomy()
         { "note.16th",      "16th note",      "Notes", "point", "note-input", "16th",    "Sixteenth-Note" },
         { "note.32nd",      "32nd note",      "Notes", "point", "note-input", "32nd",    "Thirty-Two-Note" },
         { "note.64th",      "64th note",      "Notes", "point", "note-input", "64th",    "Sixty-Four-Note" },
+        // Rests (in model vocab; applied via note input)
+        { "rest.whole_half", "Whole/half rest", "Rests", "point", "note-input", "whole",   "Whole-Half-Rest" },
+        { "rest.quarter",    "Quarter rest",    "Rests", "point", "note-input", "quarter", "Quarter-Rest" },
+        { "rest.eighth",     "Eighth rest",     "Rests", "point", "note-input", "eighth",  "Eighth-Rest" },
+        { "rest.16th",       "16th rest",       "Rests", "point", "note-input", "16th",    "Sixteenth-Rest" },
+        { "rest.32nd",       "32nd rest",       "Rests", "point", "note-input", "32nd",    "Thirty-Two-Rest" },
+        { "rest.64th",       "64th rest",       "Rests", "point", "note-input", "64th",    "Sixty-Four-Rest" },
         // Accidentals (in model vocab; palette drop)
         { "accidental.sharp",        "Sharp",        "Accidentals", "point", "palette-drop", "sharp",        "Sharp" },
         { "accidental.flat",         "Flat",         "Accidentals", "point", "palette-drop", "flat",         "Flat" },

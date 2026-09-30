@@ -32,9 +32,16 @@
 #include <QJsonDocument>
 #include <QJsonObject>
 
+#include <QDate>
+
 #include "notation/inotationinteraction.h"
 #include "notation/inotationnoteinput.h"
 #include "notation/inotationelements.h"
+#include "notation/inotationselection.h"
+
+#include "notation/internal/correctionrecord.h"
+#include "notation/internal/correctioncontext.h"
+#include "notation/internal/correctiontaxonomy.h"
 
 #include "engraving/types/types.h"
 #include "engraving/dom/factory.h"
@@ -74,13 +81,11 @@ static void addUnique(std::vector<EngravingItem*>& out, EngravingItem* el)
 }
 
 // Elements directly under a scribble path (for erase).
-static std::vector<EngravingItem*> collectAlongPath(const QJsonArray& path, const INotationInteractionPtr& interaction, float width)
+static std::vector<EngravingItem*> collectAlongPath(const QList<QPointF>& path, const INotationInteractionPtr& interaction, float width)
 {
     std::vector<EngravingItem*> out;
-    for (const QJsonValue& v : path) {
-        const QJsonObject p = v.toObject();
-        const muse::PointF pt(p.value("x").toDouble(), p.value("y").toDouble());
-        addUnique(out, interaction->hitElement(pt, width));
+    for (const QPointF& p : path) {
+        addUnique(out, interaction->hitElement(muse::PointF(p.x(), p.y()), width));
     }
     return out;
 }
@@ -102,14 +107,13 @@ static bool pointInPolygon(const std::vector<muse::PointF>& poly, double x, doub
 }
 
 // Elements enclosed by a lasso polygon: probe a grid of interior points and hit-test.
-static std::vector<EngravingItem*> collectInPolygon(const QJsonArray& path, const INotationInteractionPtr& interaction, double spatium)
+static std::vector<EngravingItem*> collectInPolygon(const QList<QPointF>& path, const INotationInteractionPtr& interaction, double spatium)
 {
     std::vector<muse::PointF> poly;
     double minX = 1e18, minY = 1e18, maxX = -1e18, maxY = -1e18;
-    for (const QJsonValue& v : path) {
-        const QJsonObject p = v.toObject();
-        const double x = p.value("x").toDouble();
-        const double y = p.value("y").toDouble();
+    for (const QPointF& p : path) {
+        const double x = p.x();
+        const double y = p.y();
         poly.emplace_back(x, y);
         minX = std::min(minX, x);
         minY = std::min(minY, y);
@@ -254,9 +258,9 @@ int StrokeRecognizer::recognizeAndApply(const std::vector<std::vector<muse::Poin
         return 0;
     }
 
-    const QJsonObject outObj = QJsonDocument::fromJson(output).object();
-    const QJsonArray intents = outObj.value("intents").toArray();
-    if (intents.isEmpty()) {
+    // Parse into typed results (carries label/confidence/top-k for the flywheel).
+    const QList<RecognizerResult> results = parseRecognizerOutput(output);
+    if (results.isEmpty()) {
         return 0;
     }
 
@@ -267,45 +271,101 @@ int StrokeRecognizer::recognizeAndApply(const std::vector<std::vector<muse::Poin
     INotationNoteInputPtr noteInput = interaction->noteInput();
 
     int applied = 0;
-    for (const QJsonValue& v : intents) {
-        const QJsonObject intent = v.toObject();
-        const QString type = intent.value("type").toString();
+    for (const RecognizerResult& r : results) {
+        mu::engraving::EngravingItem* created = nullptr;
 
-        if (type == "put_note" && noteInput) {
-            const QJsonObject at = intent.value("at").toObject();
-            const muse::PointF pos(at.value("x").toDouble(), at.value("y").toDouble());
+        if (r.type == "put_note" && noteInput) {
+            const muse::PointF pos(r.at.x(), r.at.y());
             if (!noteInput->isNoteInputMode()) {
                 noteInput->startNoteInput();   // enter note input; pitch derived from pos.y
             }
-            noteInput->setDuration(durationFromString(intent.value("duration").toString()));
+            noteInput->setDuration(durationFromString(r.duration));
             noteInput->putNote(pos, /*replace*/ false, /*insert*/ false);
+            created = interaction->selection() ? interaction->selection()->element() : nullptr;
             ++applied;
-        } else if (type == "erase") {
+        } else if (r.type == "erase") {
             const float width = float(spatium > 0.0 ? spatium : 1.0);
-            std::vector<EngravingItem*> elems = collectAlongPath(intent.value("path").toArray(), interaction, width);
+            std::vector<EngravingItem*> elems = collectAlongPath(r.path, interaction, width);
             if (!elems.empty()) {
                 interaction->select(elems);          // REPLACE (default)
                 interaction->deleteSelection();      // one undo command
                 ++applied;
             }
-        } else if (type == "lasso") {
-            std::vector<EngravingItem*> elems = collectInPolygon(intent.value("path").toArray(), interaction, spatium);
+        } else if (r.type == "lasso") {
+            std::vector<EngravingItem*> elems = collectInPolygon(r.path, interaction, spatium);
             if (!elems.empty()) {
                 // additive -> accumulate across loops; otherwise replace.
                 interaction->select(elems, additive ? mu::engraving::SelectType::ADD : mu::engraving::SelectType::REPLACE);
                 ++applied;
             }
-        } else if (type == "drop") {
-            const QJsonObject at = intent.value("at").toObject();
-            const muse::PointF pos(at.value("x").toDouble(), at.value("y").toDouble());
+        } else if (r.type == "drop") {
+            const muse::PointF pos(r.at.x(), r.at.y());
             mu::engraving::Score* score = notation->elements() ? notation->elements()->msScore() : nullptr;
-            if (applyDrop(intent.value("element").toString(), pos, interaction, score)) {
+            if (applyDrop(r.element, pos, interaction, score)) {
+                created = interaction->selection() ? interaction->selection()->element() : nullptr;
                 ++applied;
             }
         } else {
-            LOGI() << "stylus: intent '" << type << "' not applied";
+            LOGI() << "stylus: intent '" << r.type << "' not applied";
+        }
+
+        // Flywheel: auto-log an "accepted" sample for a classified symbol we applied.
+        // (Unverified positive — the design's default-on capture; explicit
+        // tap-to-correct will later produce "corrected"/"confirmed" records.)
+        if (created && !r.label.isEmpty()) {
+            if (const TaxonEntry* tx = taxonByHomusLabel(r.label)) {
+                CorrectionContext ctx = extractContext(created);
+                RecordMeta meta;
+                meta.createdBucket = QDate::currentDate().toString("yyyy-MM");
+                meta.appVersion = QCoreApplication::applicationVersion();
+                meta.unit = spatium;
+                QList<QList<QPointF> > qstrokes;
+                for (const std::vector<muse::PointF>& s : strokes) {
+                    QList<QPointF> one;
+                    for (const muse::PointF& p : s) {
+                        one.append(QPointF(p.x(), p.y()));
+                    }
+                    qstrokes.append(one);
+                }
+                recordCorrection(buildCorrectionRecord(qstrokes, r, ctx, "accepted",
+                                                       taxonLabelObject(*tx), /*inModelVocab*/ true, meta));
+            }
         }
     }
 
     return applied;
+}
+
+bool StrokeRecognizer::recordCorrection(const QByteArray& recordJson) const
+{
+    QString bin = QString::fromLocal8Bit(qgetenv("STYLUS_NEUME_BIN"));
+    if (bin.isEmpty()) {
+#ifdef Q_OS_WIN
+        const QString local = QCoreApplication::applicationDirPath() + "/neume.exe";
+#else
+        const QString local = QCoreApplication::applicationDirPath() + "/neume";
+#endif
+        if (QFile::exists(local)) {
+            bin = local;
+        }
+    }
+    if (bin.isEmpty()) {
+        LOGW() << "stylus: neume binary not found; correction not recorded";
+        return false;
+    }
+
+    QProcess proc;
+    proc.start(bin, QStringList() << "record");
+    if (!proc.waitForStarted(3000)) {
+        LOGE() << "stylus: failed to start neume record";
+        return false;
+    }
+    proc.write(recordJson);
+    proc.closeWriteChannel();
+    if (!proc.waitForFinished(5000)) {
+        LOGE() << "stylus: neume record timed out";
+        proc.kill();
+        return false;
+    }
+    return QJsonDocument::fromJson(proc.readAllStandardOutput()).object().value("ok").toBool(false);
 }
