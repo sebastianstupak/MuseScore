@@ -539,6 +539,26 @@ public:
     Q_INVOKABLE void closeScore(apiv1::Score* score);
     Q_INVOKABLE void closeScore();
 
+    /// \cond MS_INTERNAL
+    // Read-only notation-view access + hit testing, for stylus/pointer plugins.
+    // hitElementAt()/hitElementsAt() take SCORE (logical) coordinates — convert
+    // stylus/screen pixels with mapToScore() first. Returned elements are score-owned
+    // and valid only for immediate, synchronous use (do not cache across undo/redo or
+    // score changes).
+    /// Affine view transform {m11,m12,m21,m22,dx,dy}, mapping score(logical) -> view(px).
+    Q_INVOKABLE QVariantMap viewMatrix() const;
+    /// Current view zoom, in percent.
+    Q_INVOKABLE int viewZoomPercentage() const;
+    /// Map a view/screen-pixel point to score(logical) coordinates.
+    Q_INVOKABLE QPointF mapToScore(const QPointF& viewPoint) const;
+    /// Map a score(logical) point to view/screen-pixel coordinates.
+    Q_INVOKABLE QPointF mapFromScore(const QPointF& scorePoint) const;
+    /// The topmost element at a score(logical) point, or null. \p width is in logical units.
+    Q_INVOKABLE apiv1::EngravingItem* hitElementAt(qreal x, qreal y, float width = 0.0f);
+    /// All elements at a score(logical) point, within \p width (logical units).
+    Q_INVOKABLE QQmlListProperty<apiv1::EngravingItem> hitElementsAt(qreal x, qreal y, float width);
+    /// \endcond
+
     Q_INVOKABLE void log(const QString&);
     Q_INVOKABLE void logn(const QString&);
     Q_INVOKABLE void log2(const QString&, const QString&);

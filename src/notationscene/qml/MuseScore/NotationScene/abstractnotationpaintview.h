@@ -31,6 +31,7 @@
 #include "notation/inotationcontextconfiguration.h"
 
 #include "async/asyncable.h"
+#include "actions/iactionsdispatcher.h"
 #include "context/iglobalcontext.h"
 #include "ui/imainwindow.h"
 #include "ui/iuiactionsregister.h"
@@ -46,6 +47,8 @@
 #include "playbackcursor.h"
 #include "loopmarker.h"
 #include "continuouspanel.h"
+#include "notation/internal/annotationlayer.h"
+#include "strokerecognizer.h"
 #include "abstractelementpopupmodel.h"
 
 namespace mu::notation {
@@ -71,6 +74,15 @@ class AbstractNotationPaintView : public muse::uicomponents::QuickPaintedView, p
 
     Q_PROPERTY(bool readOnly READ readonly WRITE setReadonly NOTIFY readonlyChanged)
 
+    Q_PROPERTY(bool annotationActive READ annotationActive WRITE setAnnotationActive NOTIFY annotationStateChanged)
+    Q_PROPERTY(int annotationTool READ annotationTool WRITE setAnnotationTool NOTIFY annotationStateChanged)
+    Q_PROPERTY(QColor annotationColor READ annotationColor WRITE setAnnotationColor NOTIFY annotationStateChanged)
+    Q_PROPERTY(double annotationWidth READ annotationWidth WRITE setAnnotationWidth NOTIFY annotationStateChanged)
+    Q_PROPERTY(bool annotationCanUndo READ annotationCanUndo NOTIFY annotationStateChanged)
+    Q_PROPERTY(bool annotationCanRedo READ annotationCanRedo NOTIFY annotationStateChanged)
+    Q_PROPERTY(bool writeModeActive READ writeModeActive WRITE setWriteModeActive NOTIFY annotationStateChanged)
+    Q_PROPERTY(bool addToSelectionActive READ addToSelectionActive WRITE setAddToSelectionActive NOTIFY annotationStateChanged)
+
     muse::GlobalInject<INotationConfiguration> notationConfiguration;
     muse::GlobalInject<INotationSceneConfiguration> configuration;
     muse::GlobalInject<engraving::IEngravingConfiguration> engravingConfiguration;
@@ -80,12 +92,45 @@ class AbstractNotationPaintView : public muse::uicomponents::QuickPaintedView, p
     muse::ContextInject<muse::ui::IUiContextResolver> uiContextResolver = { this };
     muse::ContextInject<muse::ui::IMainWindow> mainWindow = { this };
     muse::ContextInject<muse::ui::IUiActionsRegister> actionsRegister = { this };
+    muse::ContextInject<muse::actions::IActionsDispatcher> dispatcher = { this };
 
 public:
     explicit AbstractNotationPaintView(QQuickItem* parent = nullptr);
     ~AbstractNotationPaintView() override;
 
     Q_INVOKABLE void load();
+
+    // Annotation (ink) tool state, exposed to the QML annotation toolbar.
+    enum AnnotationTool { AnnotationPen, AnnotationHighlighter, AnnotationEraser };
+    Q_ENUM(AnnotationTool)
+
+    enum class WriteGesture { None, Pending, Drawing, Dragging };
+
+    bool annotationActive() const;
+    void setAnnotationActive(bool active);
+    bool writeModeActive() const;
+    void setWriteModeActive(bool active);
+    bool addToSelectionActive() const;
+    void setAddToSelectionActive(bool active);
+    int annotationTool() const;
+    void setAnnotationTool(int tool);
+    QColor annotationColor() const;
+    void setAnnotationColor(const QColor& color);
+    double annotationWidth() const;
+    void setAnnotationWidth(double width);
+    bool annotationCanUndo() const;
+    bool annotationCanRedo() const;
+
+    Q_INVOKABLE void toggleAnnotation();
+    Q_INVOKABLE void toggleWriteMode();   // pen gestures -> recognized notation
+    Q_INVOKABLE void toggleAddToSelection();   // sticky "Shift" for additive lasso
+    Q_INVOKABLE void annotationUndo();
+    Q_INVOKABLE void annotationRedo();
+    Q_INVOKABLE void annotationClear();
+
+    // Dispatch a MuseScore action from the pen toolbar (play, zoomin, file-save, ...).
+    Q_INVOKABLE void dispatchAction(const QString& code);
+    Q_INVOKABLE void toggleViewMode();   // page <-> continuous
 
     Q_INVOKABLE void scrollHorizontal(qreal position);
     Q_INVOKABLE void scrollVertical(qreal position);
@@ -190,6 +235,8 @@ signals:
 
     void readonlyChanged();
 
+    void annotationStateChanged();
+
 protected:
     INotationPtr notation() const;
     void setNotation(INotationPtr notation);
@@ -284,6 +331,11 @@ private:
 
     void paintBackground(const muse::RectF& rect, muse::draw::Painter* painter);
 
+    void writeAnnotationStatus();   // env-gated status file for automated tests
+    void recognizeAccumulated();   // write mode: recognize the accumulated multi-stroke symbol
+    void onHoldTimeout();          // write mode: long-press -> grab the element under the pen
+    void dragMoveTo(const muse::PointF& logicalPos);   // move the grabbed element (native drag)
+
     muse::PointF canvasCenter() const;
     std::pair<qreal, qreal> constraintCanvas(qreal dx, qreal dy) const;
 
@@ -300,6 +352,25 @@ private:
     std::unique_ptr<LoopMarker> m_loopInMarker;
     std::unique_ptr<LoopMarker> m_loopOutMarker;
     std::unique_ptr<ContinuousPanel> m_continuousPanel;
+    AnnotationLayer* m_annotationLayer = nullptr;   // owned by the current Notation, not by the view
+    std::unique_ptr<StrokeRecognizer> m_strokeRecognizer;
+    bool m_annotationMode = false;
+    bool m_writeMode = false;   // pen gestures -> recognized notation (via neume)
+    std::vector<std::vector<muse::PointF> > m_writeStrokes;   // accumulated multi-stroke symbol
+    QTimer* m_writeTimer = nullptr;                            // debounce before recognizing
+    QTimer* m_holdTimer = nullptr;                             // long-press -> grab timer
+    WriteGesture m_writeGesture = WriteGesture::None;
+    QPoint m_pressScreenPos;                                   // press point (physical px) for move threshold
+    muse::PointF m_pressLogical;                               // press point (score coords) for hit/drag
+    muse::PointF m_dragOffset;                                 // grabbed element's offset at grab time
+    bool m_addToSelection = false;                             // sticky "Shift": additive lasso
+    bool m_writeAdditive = false;                              // additive state captured at gesture end
+    bool m_penBarrelDown = false;                              // pen barrel/side button (from tabletEvent)
+    AnnotationTool m_annotationTool = AnnotationPen;
+    QColor m_penColor = QColor(224, 48, 48);   // current pen colour
+    double m_penWidth = 15.0;                   // current pen width (logical units)
+    bool m_erasing = false;
+    QString m_annotationStatusPath;
 
     qreal m_previousVerticalScrollPosition = 0;
     qreal m_previousHorizontalScrollPosition = 0;

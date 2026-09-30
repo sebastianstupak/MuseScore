@@ -37,6 +37,9 @@ class INotationProject;
 }
 
 namespace mu::notation {
+class AnnotationLayer;
+using AnnotationLayerPtr = std::shared_ptr<AnnotationLayer>;
+
 class INotation
 {
 public:
@@ -75,6 +78,9 @@ public:
 
     virtual INotationPaintingPtr painting() const = 0;
     virtual INotationViewStatePtr viewState() const = 0;
+
+    // annotations (freehand ink drawn over the score)
+    virtual AnnotationLayerPtr annotations() const = 0;
 
     // solo-mute state
     virtual INotationSoloMuteStatePtr soloMuteState() const = 0;

@@ -23,6 +23,7 @@
 #include "abstractnotationpaintview.h"
 
 #include <QCursor>
+#include <QFile>
 #include <QPainter>
 #include <QMimeData>
 
@@ -31,6 +32,9 @@
 
 #include "actions/actiontypes.h"
 #include "engraving/dom/shadownote.h"
+#include "engraving/dom/engravingitem.h"
+#include "engraving/dom/staff.h"
+#include "notation/inotationselection.h"
 
 #include "notation/imasternotation.h" // IWYU pragma: keep
 #include "notation/inotationaccessibility.h" // IWYU pragma: keep
@@ -40,6 +44,7 @@
 #include "notation/inotationpainting.h" // IWYU pragma: keep
 #include "notation/inotationselection.h"
 #include "notation/inotationstyle.h"
+#include "notation/inotationundostack.h"
 #include "notation/inotationviewstate.h"
 
 using namespace mu;
@@ -120,6 +125,19 @@ void AbstractNotationPaintView::load()
     m_loopOutMarker = std::make_unique<LoopMarker>(LoopBoundaryType::LoopOut, iocContext());
 
     m_continuousPanel = std::make_unique<ContinuousPanel>();
+    m_strokeRecognizer = std::make_unique<StrokeRecognizer>();
+    m_writeTimer = new QTimer(this);
+    m_writeTimer->setSingleShot(true);
+    connect(m_writeTimer, &QTimer::timeout, this, [this]() { recognizeAccumulated(); });
+    m_holdTimer = new QTimer(this);
+    m_holdTimer->setSingleShot(true);
+    connect(m_holdTimer, &QTimer::timeout, this, [this]() { onHoldTimeout(); });
+    // m_annotationLayer is owned by the current Notation; it is bound in onLoadNotation().
+    m_annotationMode = qEnvironmentVariableIsSet("STYLUS_ANNOTATE");
+    m_writeMode = qEnvironmentVariableIsSet("STYLUS_WRITE");
+    m_annotationStatusPath = qEnvironmentVariable("STYLUS_ANNOTATE_STATUS");
+    writeAnnotationStatus();   // signal that the notation view loaded (for tests)
+    emit annotationStateChanged();   // let the toolbar's bindings pick up the initial state
 
     m_inputController->setReadonly(m_readonly);
     m_inputController->init();
@@ -265,6 +283,21 @@ void AbstractNotationPaintView::onCurrentNotationChanged()
 
 void AbstractNotationPaintView::onLoadNotation(INotationPtr)
 {
+    // Bind to this score's annotation layer (owned by the Notation, serialised into
+    // the .mscz). Ink follows the score/part and any strokes loaded from disk show up.
+    m_annotationLayer = m_notation->annotations().get();
+    writeAnnotationStatus();
+    scheduleRedraw(RectF());
+
+    // Redraw and refresh status whenever the ink changes. This covers undo/redo,
+    // which restore strokes directly (bypassing the mouse handlers), so the canvas
+    // and the toolbar's stroke count stay in sync after Ctrl+Z / Ctrl+Y.
+    m_annotationLayer->changed().onNotify(this, [this]() {
+        scheduleRedraw(RectF());
+        writeAnnotationStatus();
+        emit annotationStateChanged();
+    });
+
     if (viewport().isValid() && !m_notation->viewState()->isMatrixInited()) {
         initZoomAndPosition();
     }
@@ -277,6 +310,9 @@ void AbstractNotationPaintView::onLoadNotation(INotationPtr)
 
     m_notation->notationChanged().onReceive(this, [this](const RectF& updateRect) {
         m_pageCache.clear();
+        if (m_annotationLayer) {
+            m_annotationLayer->invalidateAnchors();   // reflow ink to follow the new layout
+        }
         updateLoopMarkers();
         updateShadowNoteVisibility();
         scheduleRedraw(updateRect.isValid() ? fromLogical(updateRect) : RectF());
@@ -413,6 +449,7 @@ void AbstractNotationPaintView::onLoadNotation(INotationPtr)
 void AbstractNotationPaintView::onUnloadNotation(INotationPtr)
 {
     m_pageCache.clear();
+    m_annotationLayer = nullptr;   // the Notation owns it; just drop our non-owning reference
 
     m_notation->notationChanged().disconnect(this);
     INotationInteractionPtr interaction = m_notation->interaction();
@@ -773,6 +810,24 @@ void AbstractNotationPaintView::paint(QPainter* qp)
         engraving::rendering::PaintOptions opt;
         opt.invertColors = notationConfiguration()->shouldInvertScore();
         m_continuousPanel->paint(*painter, nvCtx, opt);
+    }
+
+    if (m_annotationLayer) {
+        // Re-assert the score transform so ink is drawn in logical coords on top.
+        painter->setWorldTransform(m_matrix * guiScalingCompensation);
+        m_annotationLayer->paint(painter);
+
+        // Write mode: preview the accumulated (multi-stroke) gesture until it is
+        // recognized, so a symbol drawn in several strokes stays visible.
+        if (m_writeMode && !m_writeStrokes.empty()) {
+            painter->setPen(Pen(Color(40, 110, 220), m_penWidth, PenStyle::SolidLine, PenCapStyle::RoundCap,
+                                PenJoinStyle::RoundJoin));
+            for (const std::vector<PointF>& s : m_writeStrokes) {
+                for (size_t i = 1; i < s.size(); ++i) {
+                    painter->drawLine(LineF(s[i - 1].x(), s[i - 1].y(), s[i].x(), s[i].y()));
+                }
+            }
+        }
     }
 }
 
@@ -1312,10 +1367,302 @@ void AbstractNotationPaintView::onElementPopupIsOpenChanged(const PopupModelType
     m_currentElementPopupType = popupType;
 }
 
+void AbstractNotationPaintView::writeAnnotationStatus()
+{
+    if (m_annotationStatusPath.isEmpty() || !m_annotationLayer) {
+        return;
+    }
+    QFile f(m_annotationStatusPath);
+    if (f.open(QIODevice::WriteOnly | QIODevice::Truncate)) {
+        const QString s = QString("{\"annotationMode\":%1,\"strokes\":%2}")
+                          .arg(m_annotationMode ? "true" : "false")
+                          .arg(m_annotationLayer->strokeCount());
+        f.write(s.toUtf8());
+    }
+}
+
+bool AbstractNotationPaintView::annotationActive() const
+{
+    return m_annotationMode;
+}
+
+void AbstractNotationPaintView::setAnnotationActive(bool active)
+{
+    if (m_annotationMode == active) {
+        return;
+    }
+    m_annotationMode = active;
+    if (active && m_writeMode) {
+        m_writeMode = false;   // annotate and write are mutually exclusive pen modes
+        if (notationNoteInput() && notationNoteInput()->isNoteInputMode()) {
+            notationNoteInput()->endNoteInput();
+        }
+    }
+    writeAnnotationStatus();
+    scheduleRedraw();
+    emit annotationStateChanged();
+}
+
+bool AbstractNotationPaintView::writeModeActive() const
+{
+    return m_writeMode;
+}
+
+void AbstractNotationPaintView::setWriteModeActive(bool active)
+{
+    if (m_writeMode == active) {
+        return;
+    }
+    m_writeMode = active;
+    if (active) {
+        setAnnotationActive(false);   // mutually exclusive with annotate mode
+    } else {
+        m_writeStrokes.clear();
+        if (m_writeTimer) {
+            m_writeTimer->stop();
+        }
+        if (notationNoteInput() && notationNoteInput()->isNoteInputMode()) {
+            notationNoteInput()->endNoteInput();   // leave note input when exiting write mode
+        }
+    }
+    writeAnnotationStatus();
+    scheduleRedraw();
+    emit annotationStateChanged();
+}
+
+void AbstractNotationPaintView::recognizeAccumulated()
+{
+    if (m_writeStrokes.empty()) {
+        return;
+    }
+    if (m_strokeRecognizer && m_annotationLayer && notation()) {
+        m_strokeRecognizer->recognizeAndApply(m_writeStrokes, notation(), m_annotationLayer->spatium(), m_writeAdditive);
+    }
+    m_writeStrokes.clear();
+    m_writeAdditive = false;
+    scheduleRedraw();
+}
+
+void AbstractNotationPaintView::onHoldTimeout()
+{
+    if (!m_writeMode || m_writeGesture != WriteGesture::Pending) {
+        return;
+    }
+    // This press is a grab, not a draw: drop the tentative ink stroke.
+    if (m_annotationLayer) {
+        m_annotationLayer->takeCurrentStroke();
+    }
+    INotationInteractionPtr in = notationInteraction();
+    if (!in) {
+        m_writeGesture = WriteGesture::None;
+        return;
+    }
+    // Generous hit tolerance (~0.9 staff space): pen input is never pixel-perfect.
+    const double sp = m_annotationLayer ? m_annotationLayer->spatium() : 0.0;
+    const float w = sp > 0.0 ? float(sp * 0.9) : (16.0f / qMax(0.0001f, float(m_matrix.m11())));
+    EngravingItem* el = in->hitElement(m_pressLogical, w);
+    if (!el) {
+        m_writeGesture = WriteGesture::None;   // nothing under the pen to grab
+        scheduleRedraw();
+        return;
+    }
+    in->select({ el }, mu::engraving::SelectType::SINGLE);   // staffIndex default (single element)
+    m_dragOffset = el->offset();
+    m_writeGesture = WriteGesture::Dragging;
+    scheduleRedraw();
+}
+
+void AbstractNotationPaintView::dragMoveTo(const muse::PointF& logicalPos)
+{
+    INotationInteractionPtr in = notationInteraction();
+    if (!in) {
+        return;
+    }
+    if (!in->isDragStarted()) {
+        auto isDraggable = [](const EngravingItem* e) { return e && e->selected(); };
+        in->startDrag(in->selection()->elements(), m_dragOffset, isDraggable);
+    }
+    in->drag(m_pressLogical, logicalPos, DragMode::BothXY);   // vertical drag re-pitches a note
+    scheduleRedraw();
+}
+
+bool AbstractNotationPaintView::addToSelectionActive() const
+{
+    return m_addToSelection;
+}
+
+void AbstractNotationPaintView::setAddToSelectionActive(bool active)
+{
+    if (m_addToSelection == active) {
+        return;
+    }
+    m_addToSelection = active;
+    emit annotationStateChanged();
+}
+
+void AbstractNotationPaintView::toggleAddToSelection()
+{
+    setAddToSelectionActive(!m_addToSelection);
+}
+
+// NOTE: pen barrel/side button support (m_penBarrelDown) is deferred — QQuickItem
+// has no tabletEvent; a QQuickPointerHandler or window event filter is needed, and
+// it requires real-pen testing on the tablet. The sticky toggle + keyboard Shift
+// provide additive selection in the meantime.
+
+int AbstractNotationPaintView::annotationTool() const
+{
+    return static_cast<int>(m_annotationTool);
+}
+
+void AbstractNotationPaintView::setAnnotationTool(int tool)
+{
+    if (static_cast<int>(m_annotationTool) == tool) {
+        return;
+    }
+    m_annotationTool = static_cast<AnnotationTool>(tool);
+    emit annotationStateChanged();
+}
+
+QColor AbstractNotationPaintView::annotationColor() const
+{
+    return m_penColor;
+}
+
+void AbstractNotationPaintView::setAnnotationColor(const QColor& color)
+{
+    if (m_penColor == color) {
+        return;
+    }
+    m_penColor = color;
+    emit annotationStateChanged();
+}
+
+double AbstractNotationPaintView::annotationWidth() const
+{
+    return m_penWidth;
+}
+
+void AbstractNotationPaintView::setAnnotationWidth(double width)
+{
+    if (qFuzzyCompare(m_penWidth, width)) {
+        return;
+    }
+    m_penWidth = width;
+    emit annotationStateChanged();
+}
+
+bool AbstractNotationPaintView::annotationCanUndo() const
+{
+    // Ink edits live on the score's undo stack now, so undo availability is the
+    // score's (unified with Ctrl+Z / Ctrl+Y and every other edit).
+    const INotationPtr n = notation();
+    return n && n->undoStack()->canUndo();
+}
+
+bool AbstractNotationPaintView::annotationCanRedo() const
+{
+    const INotationPtr n = notation();
+    return n && n->undoStack()->canRedo();
+}
+
+void AbstractNotationPaintView::toggleAnnotation()
+{
+    setAnnotationActive(!m_annotationMode);
+}
+
+void AbstractNotationPaintView::toggleWriteMode()
+{
+    setWriteModeActive(!m_writeMode);
+}
+
+void AbstractNotationPaintView::annotationUndo()
+{
+    // Drive the single, unified undo stack. If the last edit was ink, this pops the
+    // InkEditCommand and the layer's changed() notification redraws; otherwise it
+    // undoes whatever else is on top. The toolbar button and Ctrl+Z now agree.
+    dispatcher()->dispatch("undo");
+}
+
+void AbstractNotationPaintView::annotationRedo()
+{
+    dispatcher()->dispatch("redo");
+}
+
+void AbstractNotationPaintView::annotationClear()
+{
+    if (!m_annotationLayer) {
+        return;
+    }
+    // Make "clear all ink" a single undoable step on the score's stack.
+    m_annotationLayer->beginUndoableEdit();
+    m_annotationLayer->clear();
+    if (const INotationPtr n = notation()) {
+        m_annotationLayer->endUndoableEdit(n->undoStack());
+    }
+    scheduleRedraw();
+    writeAnnotationStatus();
+    emit annotationStateChanged();
+}
+
+void AbstractNotationPaintView::dispatchAction(const QString& code)
+{
+    dispatcher()->dispatch(code.toStdString());
+}
+
+void AbstractNotationPaintView::toggleViewMode()
+{
+    if (!notation()) {
+        return;
+    }
+    const bool isPage = notation()->viewMode() == engraving::LayoutMode::PAGE;
+    dispatcher()->dispatch(isPage ? "view-mode-continuous" : "view-mode-page");
+}
+
 void AbstractNotationPaintView::mousePressEvent(QMouseEvent* event)
 {
     TRACEFUNC;
     forceFocusIn();
+
+    if (isInited() && (m_annotationMode || m_writeMode) && m_annotationLayer && event->button() == Qt::LeftButton) {
+        const PointF logical = toLogical(event->pos());
+        if (pageByPoint(logical)) {   // ink only on pages
+            if (m_writeMode) {
+                // Transient recognition gesture, previewed in a distinct colour.
+                // Also arm the long-press timer: hold still to grab the element here.
+                m_pressLogical = logical;
+                m_pressScreenPos = event->pos();
+                m_writeGesture = WriteGesture::Pending;
+                m_annotationLayer->setColor(Color(40, 110, 220));
+                m_annotationLayer->setWidth(m_penWidth);
+                m_annotationLayer->beginStroke(logical);
+                if (m_holdTimer) {
+                    m_holdTimer->start(450);
+                }
+            } else if (m_annotationTool == AnnotationEraser) {
+                // Snapshot before the swipe so the whole erase becomes one undo step.
+                m_annotationLayer->beginUndoableEdit();
+                m_erasing = true;
+                m_annotationLayer->eraseAt(logical, qMax(m_penWidth * 1.5, 20.0));
+            } else {
+                // Snapshot before the stroke so adding it becomes one undo step.
+                m_annotationLayer->beginUndoableEdit();
+                QColor c = m_penColor;
+                double w = m_penWidth;
+                if (m_annotationTool == AnnotationHighlighter) {
+                    c.setAlpha(90);   // translucent
+                    w *= 3.0;         // wider
+                }
+                m_annotationLayer->setColor(Color(c.red(), c.green(), c.blue(), c.alpha()));
+                m_annotationLayer->setWidth(w);
+                m_annotationLayer->beginStroke(logical);
+            }
+            scheduleRedraw();
+            writeAnnotationStatus();
+            emit annotationStateChanged();
+        }
+        return;
+    }
 
     if (isInited()) {
         m_inputController->mousePressEvent(event);
@@ -1325,6 +1672,36 @@ void AbstractNotationPaintView::mousePressEvent(QMouseEvent* event)
 void AbstractNotationPaintView::mouseMoveEvent(QMouseEvent* event)
 {
     TRACEFUNC;
+    if (isInited() && (m_annotationMode || m_writeMode)) {
+        if (m_writeMode && m_writeGesture == WriteGesture::Dragging) {
+            dragMoveTo(toLogical(event->pos()));   // long-press grab -> move the element
+            return;
+        }
+        if (!m_writeMode && m_annotationTool == AnnotationEraser) {
+            if (m_erasing && m_annotationLayer) {
+                const PointF logical = toLogical(event->pos());
+                if (pageByPoint(logical)) {
+                    m_annotationLayer->eraseAt(logical, qMax(m_penWidth * 1.5, 20.0));
+                    scheduleRedraw();
+                }
+            }
+        } else if (m_annotationLayer && m_annotationLayer->isDrawing()) {
+            // In write mode, real movement means "draw", not "hold to grab".
+            if (m_writeMode && m_writeGesture == WriteGesture::Pending
+                && (event->pos() - m_pressScreenPos).manhattanLength() > 6) {
+                m_writeGesture = WriteGesture::Drawing;
+                if (m_holdTimer) {
+                    m_holdTimer->stop();
+                }
+            }
+            const PointF logical = toLogical(event->pos());
+            if (pageByPoint(logical)) {
+                m_annotationLayer->appendPoint(logical);
+                scheduleRedraw();
+            }
+        }
+        return;
+    }
     if (isInited()) {
         m_inputController->mouseMoveEvent(event);
     }
@@ -1342,6 +1719,48 @@ void AbstractNotationPaintView::mouseDoubleClickEvent(QMouseEvent* event)
 
 void AbstractNotationPaintView::mouseReleaseEvent(QMouseEvent* event)
 {
+    if (isInited() && (m_annotationMode || m_writeMode)) {
+        if (m_writeMode) {
+            if (m_holdTimer) {
+                m_holdTimer->stop();
+            }
+            if (m_writeGesture == WriteGesture::Dragging) {
+                INotationInteractionPtr in = notationInteraction();
+                if (in && in->isDragStarted()) {
+                    in->endDrag();   // commit the move (one undo command)
+                }
+                m_writeGesture = WriteGesture::None;
+            } else if (m_annotationLayer) {
+                // capture the "add to selection" modifier at gesture end (for a lasso)
+                m_writeAdditive = m_addToSelection || m_penBarrelDown
+                                  || event->modifiers().testFlag(Qt::ShiftModifier);
+                std::vector<PointF> stroke = m_annotationLayer->takeCurrentStroke();
+                if (!stroke.empty()) {
+                    m_writeStrokes.push_back(stroke);   // a symbol (or tap) may span several strokes
+                }
+                if (m_writeTimer) {
+                    m_writeTimer->start(600);   // recognize once the symbol looks finished
+                }
+                m_writeGesture = WriteGesture::None;
+            }
+        } else if (m_annotationTool == AnnotationEraser) {
+            m_erasing = false;
+            if (m_annotationLayer) {
+                if (const INotationPtr n = notation()) {
+                    m_annotationLayer->endUndoableEdit(n->undoStack());   // one command per erase swipe
+                }
+            }
+        } else if (m_annotationLayer) {
+            m_annotationLayer->endStroke();
+            if (const INotationPtr n = notation()) {
+                m_annotationLayer->endUndoableEdit(n->undoStack());   // one command per stroke
+            }
+        }
+        scheduleRedraw();
+        writeAnnotationStatus();
+        emit annotationStateChanged();
+        return;
+    }
     if (isInited()) {
         m_inputController->mouseReleaseEvent(event);
     }
@@ -1372,6 +1791,30 @@ bool AbstractNotationPaintView::shortcutOverride(QKeyEvent* event)
 
 void AbstractNotationPaintView::keyPressEvent(QKeyEvent* event)
 {
+    if (event->key() == Qt::Key_A && event->modifiers() == (Qt::ControlModifier | Qt::AltModifier)) {
+        toggleAnnotation();   // Ctrl+Alt+A toggles annotation mode
+        event->accept();
+        return;
+    }
+
+    if (event->key() == Qt::Key_W && event->modifiers() == (Qt::ControlModifier | Qt::AltModifier)) {
+        toggleWriteMode();   // Ctrl+Alt+W toggles write (recognition) mode
+        event->accept();
+        return;
+    }
+
+    if (m_annotationMode && event->modifiers() == Qt::NoModifier) {
+        // ink-mode-scoped tool shortcuts (only intercept while annotating)
+        switch (event->key()) {
+        case Qt::Key_P: setAnnotationTool(AnnotationPen); event->accept(); return;
+        case Qt::Key_H: setAnnotationTool(AnnotationHighlighter); event->accept(); return;
+        case Qt::Key_E: setAnnotationTool(AnnotationEraser); event->accept(); return;
+        case Qt::Key_BracketLeft:  setAnnotationWidth(qMax(1.0, m_penWidth - 3.0)); event->accept(); return;
+        case Qt::Key_BracketRight: setAnnotationWidth(m_penWidth + 3.0); event->accept(); return;
+        default: break;
+        }
+    }
+
     if (isInited()) {
         m_inputController->keyPressEvent(event);
     }

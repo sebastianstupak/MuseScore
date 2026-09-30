@@ -55,6 +55,7 @@
 #include "notation/iexcerptnotation.h" // IWYU pragma: keep
 #include "notation/inotationundostack.h" // IWYU pragma: keep
 #include "notation/inotationviewstate.h"
+#include "notation/internal/annotationlayer.h"
 #include "notation/internal/masternotation.h"
 #include "notation/notationerrors.h"
 #include "projectaudiosettings.h"
@@ -258,6 +259,7 @@ Ret NotationProject::doLoad(const muse::io::path_t& path, const OpenParams& open
 
     // Load view settings & solo-mute states (needs to be done after notations are created)
     m_masterNotation->notation()->viewState()->read(reader);
+    m_masterNotation->notation()->annotations()->read(reader);
     m_masterNotation->notation()->soloMuteState()->read(reader);
     const int mscVersion = m_masterNotation->mscVersion();
     for (const IExcerptNotationPtr& excerpt : m_masterNotation->excerpts()) {
@@ -268,6 +270,7 @@ Ret NotationProject::doLoad(const muse::io::path_t& path, const OpenParams& open
         }
         muse::io::path_t ePath = u"Excerpts/" + excerpt->fileName() + u"/";
         excerptNotation->viewState()->read(reader, ePath);
+        excerptNotation->annotations()->read(reader, ePath);
         excerptNotation->soloMuteState()->read(reader, ePath);
     }
 
@@ -919,6 +922,9 @@ Ret NotationProject::writeProject(MscWriter& msczWriter, bool createThumbnail, c
     // Write master view settings
     m_masterNotation->notation()->viewState()->write(msczWriter);
 
+    // Write master annotations (freehand ink)
+    m_masterNotation->notation()->annotations()->write(msczWriter);
+
     if (ctx && ctx->shouldWriteRange()) {
         return make_ret(Ret::Code::Ok);
     }
@@ -927,6 +933,7 @@ Ret NotationProject::writeProject(MscWriter& msczWriter, bool createThumbnail, c
     for (const IExcerptNotationPtr& excerpt : m_masterNotation->excerpts()) {
         muse::io::path_t path = u"Excerpts/" + excerpt->fileName() + u"/";
         excerpt->notation()->viewState()->write(msczWriter, path);
+        excerpt->notation()->annotations()->write(msczWriter, path);
 
         ByteArray soloMuteData;
         auto soloMuteBuf = Buffer::opened(IODevice::WriteOnly, &soloMuteData);
@@ -1090,6 +1097,12 @@ void NotationProject::listenIfNeedSaveChanges()
             markAsUnsaved();
             m_hasNonUndoStackChanges = true;
         }, Mode::SetReplace);
+
+        // NOTE: ink annotation edits are now recorded on the score's undo stack
+        // (see AnnotationLayer::endUndoableEdit / InkEditCommand), so the stack's
+        // clean-index already tracks whether they need saving. Flagging them as
+        // non-undo-stack changes here would keep the project "unsaved" even after
+        // undoing all ink back to the last-saved state, so we deliberately don't.
 
         notation->soloMuteState()->trackSoloMuteStateChanged().onReceive(
             this, [this](const InstrumentTrackId&, const notation::INotationSoloMuteState::SoloMuteState&) {

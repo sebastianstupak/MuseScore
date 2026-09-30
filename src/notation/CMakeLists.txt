@@ -109,6 +109,8 @@ target_sources(notation PRIVATE
     internal/notationundostack.h
     internal/notationviewstate.cpp
     internal/notationviewstate.h
+    internal/annotationlayer.cpp
+    internal/annotationlayer.h
     internal/previewmeasure.cpp
     internal/previewmeasure.h
     internal/positionswriter.cpp
