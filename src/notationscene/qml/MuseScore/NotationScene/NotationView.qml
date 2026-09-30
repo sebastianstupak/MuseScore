@@ -230,6 +230,10 @@ FocusScope {
                         notationViewRect: Qt.rect(notationView.x, notationView.y, notationView.width, notationView.height)
                         notationViewMatrix: notationView.matrix
                     }
+
+                    AnnotationToolBar {
+                        view: notationView
+                    }
                 }
 
                 onPinchToZoom: function(scale, pos) {

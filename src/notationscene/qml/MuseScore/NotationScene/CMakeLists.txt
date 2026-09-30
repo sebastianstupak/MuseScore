@@ -38,6 +38,8 @@ qt_add_qml_module(notationscene_qml
         abstractnotationpaintview.h
         continuouspanel.cpp
         continuouspanel.h
+        strokerecognizer.cpp
+        strokerecognizer.h
         editgridsizedialogmodel.cpp
         editgridsizedialogmodel.h
         editpercussionshortcutmodel.cpp
@@ -192,6 +194,7 @@ qt_add_qml_module(notationscene_qml
         internal/SearchPopup.qml
         internal/SelectionFilterSection.qml
         internal/VoicesPopup.qml
+        AnnotationToolBar.qml
         NotationToolBar.qml
         NotationView.qml
         NoteInputBar.qml

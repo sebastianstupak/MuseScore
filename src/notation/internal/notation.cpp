@@ -32,6 +32,7 @@
 #include "masternotation.h"
 #include "notationpainting.h"
 #include "notationviewstate.h"
+#include "annotationlayer.h"
 #include "notationsolomutestate.h"
 #include "notationinteraction.h"
 #include "notationundostack.h"
@@ -53,6 +54,7 @@ Notation::Notation(MasterNotation* master, const muse::modularity::ContextPtr& i
 {
     m_painting = std::make_shared<NotationPainting>(this);
     m_viewState = std::make_shared<NotationViewState>(this, iocCtx);
+    m_annotations = std::make_shared<AnnotationLayer>();
     m_soloMuteState = std::make_shared<NotationSoloMuteState>();
     m_undoStack = std::make_shared<NotationUndoStack>(this, m_notationChanged);
     m_interaction = std::make_shared<NotationInteraction>(this, m_undoStack);
@@ -139,6 +141,9 @@ void Notation::setScore(Score* score)
     }
 
     m_score = score;
+    if (m_annotations) {
+        m_annotations->setScore(score);
+    }
     m_scoreInited.notify();
 }
 
@@ -287,6 +292,11 @@ INotationPaintingPtr Notation::painting() const
 INotationViewStatePtr Notation::viewState() const
 {
     return m_viewState;
+}
+
+AnnotationLayerPtr Notation::annotations() const
+{
+    return m_annotations;
 }
 
 INotationSoloMuteStatePtr Notation::soloMuteState() const

@@ -71,6 +71,7 @@ public:
 
     muse::ByteArray readAudioSettingsJsonFile(const muse::io::path_t& pathPrefix = "") const;
     muse::ByteArray readViewSettingsJsonFile(const muse::io::path_t& pathPrefix = "") const;
+    muse::ByteArray readAnnotationsJsonFile(const muse::io::path_t& pathPrefix = "") const;
     muse::ByteArray readAutomationJsonFile() const;
 
 private:
