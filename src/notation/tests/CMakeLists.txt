@@ -33,6 +33,10 @@ set(MODULE_TEST_SRC
 
     ${CMAKE_CURRENT_LIST_DIR}/environment.cpp
     ${CMAKE_CURRENT_LIST_DIR}/annotationlayer_tests.cpp
+    ${CMAKE_CURRENT_LIST_DIR}/correctioncontext_tests.cpp
+    ${CMAKE_CURRENT_LIST_DIR}/correctiontaxonomy_tests.cpp
+    ${CMAKE_CURRENT_LIST_DIR}/correctionrecord_tests.cpp
+    ${CMAKE_CURRENT_LIST_DIR}/pendingrecognition_tests.cpp
 )
 
 set(MODULE_TEST_INCLUDE

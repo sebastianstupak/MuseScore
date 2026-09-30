@@ -93,6 +93,12 @@ target_sources(notation PRIVATE
     internal/notationviewstate.h
     internal/annotationlayer.cpp
     internal/annotationlayer.h
+    internal/correctioncontext.cpp
+    internal/correctioncontext.h
+    internal/correctiontaxonomy.cpp
+    internal/correctiontaxonomy.h
+    internal/correctionrecord.cpp
+    internal/correctionrecord.h
     internal/previewmeasure.cpp
     internal/previewmeasure.h
     internal/positionswriter.cpp
