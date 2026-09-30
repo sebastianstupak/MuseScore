@@ -27,9 +27,24 @@ set(MODULE_TEST_SRC
     ${CMAKE_CURRENT_LIST_DIR}/mocks/notationselectionmock.h
     ${CMAKE_CURRENT_LIST_DIR}/mocks/notationselectionrangemock.h
     ${CMAKE_CURRENT_LIST_DIR}/mocks/controlledviewmock.h
+    # ScoreRW: read a real MasterScore from a test .mscx (shared with engraving tests)
+    ${PROJECT_SOURCE_DIR}/src/engraving/tests/utils/scorerw.cpp
+    ${PROJECT_SOURCE_DIR}/src/engraving/tests/utils/scorerw.h
+
+    ${CMAKE_CURRENT_LIST_DIR}/environment.cpp
+    ${CMAKE_CURRENT_LIST_DIR}/annotationlayer_tests.cpp
+)
+
+set(MODULE_TEST_INCLUDE
+    ${CMAKE_CURRENT_LIST_DIR}/..
+)
+
+set(MODULE_TEST_LINK
+    engraving
+    notation
+    Qt::Widgets
 )
 
 set(MODULE_TEST_DATA_ROOT ${CMAKE_CURRENT_LIST_DIR})
 
-# At the moment no own tests
-# include(SetupGTest)
+include(SetupGTest)

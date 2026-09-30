@@ -31,6 +31,14 @@
 #include "engraving/dom/masterscore.h"
 #include "engraving/types/types.h"
 
+#include "draw/types/geometry.h"
+#include "draw/types/transform.h"
+
+#include "notation/inotation.h"
+#include "notation/inotationelements.h" // IWYU pragma: keep
+#include "notation/inotationinteraction.h"
+#include "notation/inotationviewstate.h"
+
 // api
 #include "engravingapiv1.h"
 #include "score.h"
@@ -495,6 +503,85 @@ mu::engraving::Score* PluginAPI::currentScore() const
     }
 
     return nullptr;
+}
+
+QVariantMap PluginAPI::viewMatrix() const
+{
+    notation::INotationPtr notation = context()->currentNotation();
+    if (!notation) {
+        return {};
+    }
+
+    const muse::draw::Transform& m = notation->viewState()->matrix();
+    QVariantMap result;
+    result["m11"] = m.m11();
+    result["m12"] = m.m12();
+    result["m21"] = m.m21();
+    result["m22"] = m.m22();
+    result["dx"] = m.dx();
+    result["dy"] = m.dy();
+    return result;
+}
+
+int PluginAPI::viewZoomPercentage() const
+{
+    notation::INotationPtr notation = context()->currentNotation();
+    if (!notation) {
+        return 0;
+    }
+
+    return notation->viewState()->zoomPercentage().val;
+}
+
+QPointF PluginAPI::mapToScore(const QPointF& viewPoint) const
+{
+    notation::INotationPtr notation = context()->currentNotation();
+    if (!notation) {
+        return {};
+    }
+
+    const muse::draw::Transform& m = notation->viewState()->matrix();
+    return m.inverted().map(muse::PointF::fromQPointF(viewPoint)).toQPointF();
+}
+
+QPointF PluginAPI::mapFromScore(const QPointF& scorePoint) const
+{
+    notation::INotationPtr notation = context()->currentNotation();
+    if (!notation) {
+        return {};
+    }
+
+    const muse::draw::Transform& m = notation->viewState()->matrix();
+    return m.map(muse::PointF::fromQPointF(scorePoint)).toQPointF();
+}
+
+apiv1::EngravingItem* PluginAPI::hitElementAt(qreal x, qreal y, float width)
+{
+    notation::INotationPtr notation = context()->currentNotation();
+    if (!notation) {
+        return nullptr;
+    }
+
+    if (width <= 0.0f) {
+        // ~3 device px expressed in logical units (matrix.m11() is the score->px scale).
+        const double scaling = notation->viewState()->matrix().m11();
+        width = static_cast<float>(3.0 / (scaling != 0.0 ? scaling : 1.0));
+    }
+
+    mu::engraving::EngravingItem* item = notation->interaction()->hitElement(muse::PointF(x, y), width);
+    return wrap(item, Ownership::SCORE);
+}
+
+QQmlListProperty<apiv1::EngravingItem> PluginAPI::hitElementsAt(qreal x, qreal y, float width)
+{
+    static std::vector<mu::engraving::EngravingItem*> hitList;
+    hitList.clear();
+
+    if (notation::INotationPtr notation = context()->currentNotation()) {
+        hitList = notation->interaction()->hitElements(muse::PointF(x, y), width);
+    }
+
+    return wrapContainerProperty<apiv1::EngravingItem>(this, hitList);
 }
 
 QString PluginAPI::pluginType() const

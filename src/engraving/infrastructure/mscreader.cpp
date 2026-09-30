@@ -248,6 +248,15 @@ ByteArray MscReader::readViewSettingsJsonFile(const muse::io::path_t& pathPrefix
     return fileData(pathPrefix.toString() + u"viewsettings.json");
 }
 
+ByteArray MscReader::readAnnotationsJsonFile(const muse::io::path_t& pathPrefix) const
+{
+    String name = pathPrefix.toString() + u"annotations.json";
+    if (!fileExists(name)) {
+        return ByteArray();
+    }
+    return fileData(name);
+}
+
 muse::ByteArray MscReader::readAutomationJsonFile() const
 {
     if (!fileExists(u"automation.json")) {
