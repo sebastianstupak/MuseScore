@@ -81,6 +81,7 @@ TEST(Notation_CorrectionRecord, BuildsSchema1RecordWithSafeId)
     meta.createdBucket = "2026-09";
     meta.engineVersion = "neume 0.0.0";
     meta.appVersion = "musescore-fork";
+    meta.modelVersion = "m1";
     meta.unit = 12.0;
     // id left empty -> builder mints a safe one
 
@@ -93,6 +94,7 @@ TEST(Notation_CorrectionRecord, BuildsSchema1RecordWithSafeId)
     EXPECT_EQ(o.value("in_model_vocab").toBool(), true);
     EXPECT_EQ(o.value("created_bucket").toString(), QString("2026-09"));
     EXPECT_DOUBLE_EQ(o.value("unit").toDouble(), 12.0);
+    EXPECT_EQ(o.value("model_version").toString(), QString("m1"));
     // id is safe [A-Za-z0-9_-] and non-empty (neume record rejects otherwise)
     const QString id = o.value("id").toString();
     EXPECT_TRUE(QRegularExpression("^[A-Za-z0-9_-]+$").match(id).hasMatch());
@@ -105,4 +107,15 @@ TEST(Notation_CorrectionRecord, BuildsSchema1RecordWithSafeId)
     // context present
     EXPECT_EQ(o.value("context").toObject().value("clef").toString(), QString("G"));
     EXPECT_EQ(o.value("context").toObject().value("pitch").toInt(), 64);
+}
+
+TEST(Notation_CorrectionRecord, CreatedBucketFallsBackToCurrentMonth)
+{
+    RecognizerResult rec; rec.type = "put_note"; rec.label = "Quarter-Note";
+    CorrectionContext ctx;
+    QJsonObject label; label.insert("id", "note.quarter");
+    RecordMeta meta; // id + createdBucket left empty -> both minted
+    const QByteArray json = buildCorrectionRecord({ { QPointF(0,0), QPointF(1,1) } }, rec, ctx, "confirmed", label, true, meta);
+    const QString bucket = QJsonDocument::fromJson(json).object().value("created_bucket").toString();
+    EXPECT_TRUE(QRegularExpression("^[0-9]{4}-[0-9]{2}$").match(bucket).hasMatch());
 }

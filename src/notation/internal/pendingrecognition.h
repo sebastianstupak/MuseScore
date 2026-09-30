@@ -5,6 +5,8 @@
 #ifndef MU_NOTATION_PENDINGRECOGNITION_H
 #define MU_NOTATION_PENDINGRECOGNITION_H
 
+#include <optional>
+
 #include <QList>
 #include <QPointF>
 
@@ -32,17 +34,17 @@ class PendingRegistry
 public:
     void add(const PendingRecognition& p) { m_pending.append(p); }
 
-    const PendingRecognition* find(const mu::engraving::EngravingItem* el) const
+    std::optional<PendingRecognition> find(const mu::engraving::EngravingItem* el) const
     {
         if (!el) {
-            return nullptr;
+            return std::nullopt;
         }
         for (const PendingRecognition& p : m_pending) {
             if (p.element == el) {
-                return &p;
+                return p;
             }
         }
-        return nullptr;
+        return std::nullopt;
     }
 
     void clear() { m_pending.clear(); }

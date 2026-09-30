@@ -56,6 +56,7 @@ public:
     MOCK_METHOD(INotationPaintingPtr, painting, (), (const, override));
     MOCK_METHOD(INotationViewStatePtr, viewState, (), (const, override));
     MOCK_METHOD(INotationSoloMuteStatePtr, soloMuteState, (), (const, override));
+    MOCK_METHOD(AnnotationLayerPtr, annotations, (), (const, override));
     MOCK_METHOD(INotationInteractionPtr, interaction, (), (const, override));
     MOCK_METHOD(INotationMidiInputPtr, midiInput, (), (const, override));
     MOCK_METHOD(INotationUndoStackPtr, undoStack, (), (const, override));
