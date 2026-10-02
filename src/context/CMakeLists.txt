@@ -24,12 +24,15 @@ target_sources(context PRIVATE
     contextmodule.cpp
     contextmodule.h
     iglobalcontext.h
+    iinputinterceptor.h
     iplaybackstate.h
     uicontext.h
     shortcutcontext.h
     iuicontextresolver.h
     internal/globalcontext.cpp
     internal/globalcontext.h
+    internal/inputinterceptor.cpp
+    internal/inputinterceptor.h
     internal/playbackstate.cpp
     internal/playbackstate.h
     internal/uicontextresolver.cpp

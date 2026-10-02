@@ -26,9 +26,13 @@ set(MODULE_TEST_SRC
     ${CMAKE_CURRENT_LIST_DIR}/mocks/notationselectionmock.h
     ${CMAKE_CURRENT_LIST_DIR}/mocks/notationselectionrangemock.h
     ${CMAKE_CURRENT_LIST_DIR}/mocks/controlledviewmock.h
+    ${CMAKE_CURRENT_LIST_DIR}/inputinterceptor_tests.cpp
+)
+
+set(MODULE_TEST_LINK
+    context
 )
 
 set(MODULE_TEST_DATA_ROOT ${CMAKE_CURRENT_LIST_DIR})
 
-# At the moment no own tests
-# include(SetupGTest)
+include(SetupGTest)

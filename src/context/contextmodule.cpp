@@ -25,6 +25,7 @@
 #include "internal/globalcontext.h"
 #include "internal/uicontextresolver.h"
 #include "internal/extensioncontextresolver.h"
+#include "internal/inputinterceptor.h"
 #include "shortcutcontext.h"
 
 #include "muse_framework_config.h"
@@ -42,6 +43,13 @@ static const std::string mname("context");
 std::string ContextModule::moduleName() const
 {
     return mname;
+}
+
+void ContextModule::registerExports()
+{
+    m_inputInterceptor = std::make_shared<InputInterceptor>();
+
+    globalIoc()->registerExport<IInputInterceptor>(moduleName(), m_inputInterceptor);
 }
 
 IContextSetup* ContextModule::newContext(const muse::modularity::ContextPtr& ctx) const
