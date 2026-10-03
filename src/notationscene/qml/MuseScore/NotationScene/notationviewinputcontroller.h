@@ -30,6 +30,7 @@
 #include "async/asyncable.h"
 
 #include "context/iglobalcontext.h"
+#include "context/iinputinterceptor.h"
 
 #include "notation/inotationinteraction.h"
 #include "notation/inotationplayback.h"
@@ -109,6 +110,7 @@ public:
     muse::ContextInject<context::IGlobalContext> globalContext = { this };
     muse::ContextInject<muse::ui::IDragController> dragController = { this };
     muse::ContextInject<INotationCommandsController> commandsController = { this };
+    muse::GlobalInject<mu::context::IInputInterceptor> inputInterceptor;
 
 public:
     NotationViewInputController(IControlledView* view, const muse::modularity::ContextPtr& iocCtx);

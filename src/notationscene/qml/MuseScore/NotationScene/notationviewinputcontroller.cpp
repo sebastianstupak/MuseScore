@@ -1440,6 +1440,13 @@ bool NotationViewInputController::isAnchorEditingEvent(QKeyEvent* event) const
 
 bool NotationViewInputController::shortcutOverrideEvent(QKeyEvent* event)
 {
+    if (inputInterceptor()->hasHandler()) {
+        mu::context::RawKeyEvent rk{ event->key(), int(event->modifiers()), event->text(), event->isAutoRepeat() };
+        if (inputInterceptor()->wouldConsume(rk)) {
+            return true; // claim the key away from global shortcuts; real handling in keyPressEvent
+        }
+    }
+
     auto key = event->key();
 
     const bool editTextKeysFound = key == Qt::Key_Return || key == Qt::Key_Enter;
@@ -1464,6 +1471,14 @@ bool NotationViewInputController::shortcutOverrideEvent(QKeyEvent* event)
 
 void NotationViewInputController::keyPressEvent(QKeyEvent* event)
 {
+    if (inputInterceptor()->hasHandler()) {
+        mu::context::RawKeyEvent rk{ event->key(), int(event->modifiers()), event->text(), event->isAutoRepeat() };
+        if (inputInterceptor()->handleKey(rk)) {
+            event->accept();
+            return;
+        }
+    }
+
     auto key = event->key();
 
     if (startTextEditingAllowed() && (event->key() == Qt::Key_Return || event->key() == Qt::Key_Enter)) {
