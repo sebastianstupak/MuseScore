@@ -31,6 +31,7 @@ TEST(Context_InputInterceptor, DelegatesPhaseAndKey)
     InputInterceptor ii;
     EXPECT_FALSE(ii.hasHandler());
     EXPECT_FALSE(ii.wouldConsume(RawKeyEvent{}));   // no handler -> false
+    EXPECT_FALSE(ii.handleKey(RawKeyEvent{}));      // no handler -> false (both phases)
 
     int seenKey = -1;
     bool seenPhase = false;
