@@ -31,6 +31,8 @@ set(API_V1_SRC
     ${CMAKE_CURRENT_LIST_DIR}/selection.h
     ${CMAKE_CURRENT_LIST_DIR}/util.cpp
     ${CMAKE_CURRENT_LIST_DIR}/util.h
+    ${CMAKE_CURRENT_LIST_DIR}/notationinput.cpp
+    ${CMAKE_CURRENT_LIST_DIR}/notationinput.h
 )
 
 # Disable unity build to avoid ambiguity errors with api vs dom classes

@@ -42,6 +42,7 @@
 #include "elements.h"
 #include "selection.h"
 #include "util.h"
+#include "notationinput.h"
 
 #include "log.h"
 
@@ -197,6 +198,7 @@ void PluginAPI::registerQmlTypes()
     qmlRegisterAnonymousType<SpannerSegment>("MuseScore", 3);
     qmlRegisterAnonymousType<Ornament>("MuseScore", 3);
     qmlRegisterType<PlayEvent>("MuseScore", 3, 0, "PlayEvent");
+    qmlRegisterType<NotationInput>("MuseScore", 3, 0, "NotationInput");
 
     qmlRegisterAnonymousType<Fraction>("MuseScore", 3);
     qRegisterMetaType<Fraction*>("Fraction*");
