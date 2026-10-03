@@ -25,12 +25,14 @@ set(MODULE_TEST_SRC
     ${CMAKE_CURRENT_LIST_DIR}/mocks/notationinteractionmock.h
     ${CMAKE_CURRENT_LIST_DIR}/mocks/notationselectionmock.h
     ${CMAKE_CURRENT_LIST_DIR}/mocks/notationselectionrangemock.h
-    ${CMAKE_CURRENT_LIST_DIR}/mocks/controlledviewmock.h
     ${CMAKE_CURRENT_LIST_DIR}/inputinterceptor_tests.cpp
 )
 
 set(MODULE_TEST_LINK
+    engraving
+    notation
     context
+    Qt::Widgets
 )
 
 set(MODULE_TEST_DATA_ROOT ${CMAKE_CURRENT_LIST_DIR})
