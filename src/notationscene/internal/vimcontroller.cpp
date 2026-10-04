@@ -39,6 +39,9 @@
 #include "engraving/dom/segment.h"
 #include "engraving/dom/score.h"
 #include "engraving/dom/mscore.h"
+#include "engraving/dom/noteval.h"
+#include "engraving/editing/noteinput.h"
+#include "engraving/editing/transaction/transaction.h"
 
 #include "log.h"
 
@@ -337,6 +340,48 @@ void VimController::moveChordNote(bool up, int times)
     }
 }
 
+void VimController::buildChordOnSelection(const QString& offsetsCsv)
+{
+    using namespace mu::engraving;
+
+    auto notation = globalContext()->currentNotation();
+    if (!notation) {
+        return;
+    }
+    auto interaction = notation->interaction();
+    if (!interaction) {
+        return;
+    }
+    EngravingItem* el = interaction->selection()->element();
+    if (!el || !el->isNote()) {
+        LOGW() << "VimController: chord-build needs a single selected note";
+        return;
+    }
+    Note* anchor = toNote(el);
+    Chord* chord = anchor->chord();
+    Score* score = anchor->score();
+    if (!chord || !score) {
+        return;
+    }
+
+    LOGI() << "VimController: chord-build offsets=" << offsetsCsv.toStdString();
+
+    notation->undoStack()->prepareChanges(muse::TranslatableString("undoableAction", "Vim: build chord"));
+    Transaction& tx = score->transactionManager()->currentOrDummyTransaction();
+    for (const QString& tok : offsetsCsv.split(',', Qt::SkipEmptyParts)) {
+        bool ok = false;
+        const int off = tok.toInt(&ok);
+        if (!ok || off == 0) {
+            continue; // 0 == the anchor note, already present
+        }
+        NoteVal nv(anchor->pitch() + off); // Phase 1: MIDI pitch only; tpc1 stays TPC_INVALID -> default spelling
+        NoteInput::addNote(tx, score, chord, nv);
+    }
+    notation->undoStack()->commitChanges();
+
+    interaction->select({ anchor }, SelectType::SINGLE);
+}
+
 void VimController::applyOps(const QStringList& cmds)
 {
     for (const QString& cmd : cmds) {
@@ -384,6 +429,10 @@ void VimController::applyOps(const QStringList& cmds)
             } else if (iv == "seventh") {
                 dispatchCode("interval7");
             }
+        } else if (head == "chord-build") {
+            buildChordOnSelection(parts.value(1));
+        } else if (head == "chord-drop") {
+            // Task 5: place anchor by letter, then build the chord on it.
         } else if (cmd == "delete:element") {
             dispatchCode("action://delete");
         } else if (cmd == "delete:measure") {

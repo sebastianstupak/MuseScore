@@ -62,6 +62,11 @@ private:
     // engraving selection model directly.
     void moveChordNote(bool up, int times);
 
+    // chord-build:<csv-offsets> — add tones (semitone offsets from the
+    // selected note's pitch) to the selected note's chord via the engraving
+    // NoteInput API, wrapped in a single undoable transaction.
+    void buildChordOnSelection(const QString& offsetsCsv);
+
     // Dev/CI self-test: when MUSE_VIM_SELFTEST is set, once a score is open,
     // feed a fixed key sequence through the real onKey() path and log the
     // dispatched actions. Exercises onKey->engine->applyOps->dispatcher without
