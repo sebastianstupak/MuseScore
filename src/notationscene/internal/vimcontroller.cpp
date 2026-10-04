@@ -25,6 +25,7 @@
 
 #include <QProcess>
 #include <QKeyEvent>
+#include <QTimer>
 #include <QJsonDocument>
 #include <QJsonObject>
 #include <QJsonArray>
@@ -73,6 +74,58 @@ void VimController::init()
     interceptor()->setHandler([this](const context::RawKeyEvent& e, bool phase) {
         return this->onKey(e, phase);
     });
+
+    maybeScheduleSelfTest();
+}
+
+void VimController::maybeScheduleSelfTest()
+{
+    if (qEnvironmentVariableIsEmpty("MUSE_VIM_SELFTEST")) {
+        return;
+    }
+    // Poll (on the UI thread) until a score is open, then run the sequence once.
+    // Opening a legacy-format score triggers a migration that can take ~30s to
+    // auto-complete headlessly, so wait generously (150 * 400ms = 60s).
+    if (globalContext()->currentNotation()) {
+        runSelfTest();
+        return;
+    }
+    if (++m_selfTestTries > 150) {
+        LOGW() << "VimController SELFTEST: no score opened after waiting; skipping";
+        return;
+    }
+    if (m_selfTestTries % 25 == 0) {
+        LOGI() << "VimController SELFTEST: waiting for a score to open (try " << m_selfTestTries << ")";
+    }
+    QTimer::singleShot(400, [this]() { maybeScheduleSelfTest(); });
+}
+
+void VimController::runSelfTest()
+{
+    LOGI() << "VimController SELFTEST: begin (feeding fixed sequence via onKey)";
+    struct K { int key; const char* text; };
+    static const K seq[] = {
+        { Qt::Key_L, "l" },           // -> notation-move-right
+        { Qt::Key_L, "l" },           // -> notation-move-right
+        { Qt::Key_H, "h" },           // -> notation-move-left
+        { Qt::Key_K, "k" },           // -> pitch-up      (within-chord-up)
+        { Qt::Key_J, "j" },           // -> pitch-down    (within-chord-down)
+        { Qt::Key_X, "x" },           // -> delete        (delete:element)
+        { Qt::Key_Comma, "," },       // -> (leader pending)
+        { Qt::Key_T, "t" },           // -> note-input + interval3 + interval5 (triad)
+    };
+    for (const K& k : seq) {
+        context::RawKeyEvent ev;
+        ev.key = k.key;
+        ev.modifiers = Qt::NoModifier;
+        ev.text = QString::fromUtf8(k.text);
+        ev.autoRepeat = false;
+        m_lastKey = -1; // bypass the phase-dedupe path
+        LOGI() << "VimController SELFTEST: feed key '" << k.text << "'";
+        const bool consumed = onKey(ev, true);
+        LOGI() << "VimController SELFTEST:   -> consumed=" << (consumed ? "true" : "false");
+    }
+    LOGI() << "VimController SELFTEST: end";
 }
 
 bool VimController::onKey(const context::RawKeyEvent& e, bool shortcutOverridePhase)
@@ -183,7 +236,15 @@ void VimController::applyOps(const QStringList& cmds)
                 dispatchCode("first-element");
             } else if (target == "score-end") {
                 dispatchCode("last-element");
+            } else if (target == "within-chord-up") {
+                // Vertical k: matches MuseScore's native Up arrow (raise pitch).
+                dispatchCode("pitch-up", n);
+            } else if (target == "within-chord-down") {
+                // Vertical j: matches MuseScore's native Down arrow (lower pitch).
+                dispatchCode("pitch-down", n);
             } else {
+                // measure-start (0) / measure-end ($) have no clean native
+                // navigation action yet — honest known gap, left unmapped.
                 LOGW() << "VimController: unmapped move target " << target.toStdString();
             }
         } else if (cmd == "insert.enter" || cmd == "insert.exit") {
@@ -197,12 +258,14 @@ void VimController::applyOps(const QStringList& cmds)
             } else if (iv == "seventh") {
                 dispatchCode("interval7");
             }
+        } else if (cmd == "delete:element") {
+            dispatchCode("action://delete");
         } else if (cmd == "delete:measure") {
             dispatchCode("time-delete");
         } else if (cmd == "undo") {
-            dispatchCode("undo");
+            dispatchCode("action://undo");
         } else if (cmd == "redo") {
-            dispatchCode("redo");
+            dispatchCode("action://redo");
         } else if (head == "raw") {
             dispatchCode(cmd.mid(4).toStdString());
         } else {

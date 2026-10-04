@@ -56,8 +56,16 @@ private:
     void applyOps(const QStringList& cmds);
     void dispatchCode(const std::string& code, int times = 1);
 
+    // Dev/CI self-test: when MUSE_VIM_SELFTEST is set, once a score is open,
+    // feed a fixed key sequence through the real onKey() path and log the
+    // dispatched actions. Exercises onKey->engine->applyOps->dispatcher without
+    // needing OS key injection (which is blocked in headless/agent shells).
+    void maybeScheduleSelfTest();
+    void runSelfTest();
+
     std::unique_ptr<QProcess> m_engine;
     int m_lastKey = -1;
     bool m_lastConsumed = false;
+    int m_selfTestTries = 0;
 };
 }
