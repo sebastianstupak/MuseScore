@@ -118,9 +118,9 @@ void VimController::runSelfTest()
 {
     LOGI() << "VimController SELFTEST: begin (feeding fixed sequence via onKey)";
 
-    // Bootstrap: select the first actual NOTE so selection-dependent ops (the
-    // triad, j/k navigation) have something to act on. In real use the user
-    // clicks a note first; a headless run has no initial selection.
+    // Bootstrap: select the first actual NOTE so selection-dependent ops
+    // (chord-build, j/k navigation) have something to act on. In real use the
+    // user clicks a note first; a headless run has no initial selection.
     {
         using namespace mu::engraving;
         if (auto notation = globalContext()->currentNotation()) {
@@ -391,10 +391,14 @@ void VimController::buildChordOnSelection(const QString& offsetsCsv)
     for (const QString& tok : offsetsCsv.split(',', Qt::SkipEmptyParts)) {
         bool ok = false;
         const int off = tok.toInt(&ok);
-        if (!ok || off == 0) {
-            continue; // 0 == the anchor note, already present
+        const int pitch = anchor->pitch() + off;
+        // Skip off==0 (the anchor itself) and any pitch already in the chord
+        // (spec §10: merge, don't double) — otherwise addNote creates a unison
+        // duplicate notehead, e.g. ,M then ,m on the same note would double the 5th.
+        if (!ok || off == 0 || chord->findNote(pitch)) {
+            continue;
         }
-        NoteVal nv(anchor->pitch() + off); // Phase 1: MIDI pitch only; tpc1 stays TPC_INVALID -> default spelling
+        NoteVal nv(pitch); // Phase 1: MIDI pitch only; tpc1 stays TPC_INVALID -> default spelling
         NoteInput::addNote(tx, score, chord, nv);
     }
     notation->undoStack()->commitChanges();
