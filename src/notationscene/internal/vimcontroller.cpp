@@ -26,6 +26,7 @@
 #include <QProcess>
 #include <QKeyEvent>
 #include <QTimer>
+#include <QMap>
 #include <QJsonDocument>
 #include <QJsonObject>
 #include <QJsonArray>
@@ -432,7 +433,20 @@ void VimController::applyOps(const QStringList& cmds)
         } else if (head == "chord-build") {
             buildChordOnSelection(parts.value(1));
         } else if (head == "chord-drop") {
-            // Task 5: place anchor by letter, then build the chord on it.
+            // Place the anchor note by letter via native note input, then build
+            // the chord around it (the just-entered note becomes the selection).
+            const QString letter = parts.value(1);
+            const QString csv = parts.value(2);
+            static const QMap<QString, std::string> kNoteAction = {
+                { "a", "note-a" }, { "b", "note-b" }, { "c", "note-c" }, { "d", "note-d" },
+                { "e", "note-e" }, { "f", "note-f" }, { "g", "note-g" }
+            };
+            if (kNoteAction.contains(letter)) {
+                dispatchCode(kNoteAction.value(letter));
+                buildChordOnSelection(csv);
+            } else {
+                LOGW() << "VimController: chord-drop bad pitch letter " << letter.toStdString();
+            }
         } else if (cmd == "delete:element") {
             dispatchCode("action://delete");
         } else if (cmd == "delete:measure") {
