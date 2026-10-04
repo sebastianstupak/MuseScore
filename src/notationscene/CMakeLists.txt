@@ -37,6 +37,8 @@ target_sources(notationscene PRIVATE
     internal/midiinputoutputcontroller.h
     internal/notationactioncontroller.cpp
     internal/notationactioncontroller.h
+    internal/vimcontroller.cpp
+    internal/vimcontroller.h
     internal/notationuiactions.cpp
     internal/notationuiactions.h
     internal/notationcommandsregister.cpp

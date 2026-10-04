@@ -34,6 +34,7 @@
 #include "internal/notationcommandsregister.h"
 #include "internal/notationcommandsstate.h"
 #include "internal/notationactioncontroller.h"
+#include "internal/vimcontroller.h"
 
 #include "widgets/breaksdialog.h"
 #include "widgets/editstaff.h"
@@ -111,6 +112,7 @@ void NotationSceneContext::registerExports()
     m_actionController = std::make_shared<NotationActionController>(iocContext());
     m_notationUiActions = std::make_shared<NotationUiActions>(m_actionController, iocContext());
     m_midiInputOutputController = std::make_shared<MidiInputOutputController>(iocContext());
+    m_vimController = std::make_shared<VimController>(iocContext());
 
     ioc()->registerExport<INotationCommandsController>(mname, m_actionController);
 }
@@ -135,5 +137,6 @@ void NotationSceneContext::onInit(const IApplication::RunMode& mode)
 
     if (mode == IApplication::RunMode::GuiApp) {
         m_midiInputOutputController->init();
+        m_vimController->init();
     }
 }
