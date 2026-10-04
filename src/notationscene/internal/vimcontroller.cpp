@@ -27,6 +27,9 @@
 #include <QKeyEvent>
 #include <QTimer>
 #include <QMap>
+#include <QGuiApplication>
+#include <QWindow>
+#include <QCoreApplication>
 #include <QJsonDocument>
 #include <QJsonObject>
 #include <QJsonArray>
@@ -148,30 +151,46 @@ void VimController::runSelfTest()
         }
     }
 
-    // ,M<CR> builds a major triad on the selected note (chord-build, direct
-    // engraving — works headless). Then k/j navigate the resulting 3-note
-    // chord. (chord-drop needs note-input which is focus-gated, so it is only
-    // exercised in the user's focused GUI, not here.)
-    struct K { int key; const char* text; };
-    static const K seq[] = {
-        { Qt::Key_Comma, "," },       // leader
-        { Qt::Key_M, "M" },           // major quality
-        { Qt::Key_Return, "" },       // commit root-position triad -> chord-build:0,4,7
-        { Qt::Key_K, "k" },           // select note above within the new chord
-        { Qt::Key_J, "j" },           // select note below
+    // Inject REAL QKeyEvents through the application so the FULL interception
+    // path runs: qApp event filter (InputInterceptor) -> handler -> onKey -> engine
+    // -> applyOps. This is the entire GUI key path minus only the OS->Qt key-code
+    // translation (which OS-level injection cannot reach in this environment). Each
+    // key is sent as ShortcutOverride then KeyPress, exactly as Qt delivers real
+    // keys. Enter uses Qt::Key_Enter (keypad code 0x01000005) to exercise the
+    // commit path for that variant; 'M' carries Shift as a real keyboard would.
+    QWindow* target = QGuiApplication::focusWindow();
+    if (!target) {
+        const QList<QWindow*> tops = QGuiApplication::topLevelWindows();
+        for (QWindow* w : tops) {
+            if (w->isVisible()) {
+                target = w;
+                break;
+            }
+        }
+        if (!target && !tops.isEmpty()) {
+            target = tops.first();
+        }
+    }
+    if (!target) {
+        LOGW() << "VimController SELFTEST: no window to inject QKeyEvents into";
+        return;
+    }
+    LOGI() << "VimController SELFTEST: injecting via QKeyEvents (through the qApp filter)";
+
+    struct K { int key; const char* text; Qt::KeyboardModifiers mods; };
+    const K seq[] = {
+        { Qt::Key_Comma, ",", Qt::NoModifier },
+        { Qt::Key_M, "M", Qt::ShiftModifier },        // capital M, as a real keyboard sends
+        { Qt::Key_Enter, "\r", Qt::NoModifier },      // keypad Enter (0x01000005) -> commit
+        { Qt::Key_K, "k", Qt::NoModifier },           // select note above within the new chord
+        { Qt::Key_J, "j", Qt::NoModifier },           // select note below
     };
-    // Feed each key through BOTH phases (ShortcutOverride then KeyPress), exactly
-    // as the qApp event filter does in the real GUI, so the two-phase dedupe path
-    // is exercised headless (not just the SO path).
     for (const K& k : seq) {
-        context::RawKeyEvent ev;
-        ev.key = k.key;
-        ev.modifiers = Qt::NoModifier;
-        ev.text = QString::fromUtf8(k.text);
-        ev.autoRepeat = false;
-        LOGI() << "VimController SELFTEST: feed key '" << k.text << "' (SO+KP)";
-        onKey(ev, true);    // ShortcutOverride phase
-        onKey(ev, false);   // KeyPress phase
+        LOGI() << "VimController SELFTEST: inject key '" << k.text << "'";
+        QKeyEvent so(QEvent::ShortcutOverride, k.key, k.mods, QString::fromUtf8(k.text));
+        QCoreApplication::sendEvent(target, &so);
+        QKeyEvent kp(QEvent::KeyPress, k.key, k.mods, QString::fromUtf8(k.text));
+        QCoreApplication::sendEvent(target, &kp);
     }
 
     // Report the chord the selection sits in — verifies chord-build placed the
