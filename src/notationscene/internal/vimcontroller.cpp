@@ -147,16 +147,17 @@ void VimController::runSelfTest()
         }
     }
 
+    // ,M<CR> builds a major triad on the selected note (chord-build, direct
+    // engraving — works headless). Then k/j navigate the resulting 3-note
+    // chord. (chord-drop needs note-input which is focus-gated, so it is only
+    // exercised in the user's focused GUI, not here.)
     struct K { int key; const char* text; };
     static const K seq[] = {
-        { Qt::Key_L, "l" },           // -> notation-move-right (select a note)
-        { Qt::Key_L, "l" },           // -> notation-move-right
-        { Qt::Key_H, "h" },           // -> notation-move-left
-        { Qt::Key_Comma, "," },       // -> (leader pending)
-        { Qt::Key_T, "t" },           // -> interval3 + interval5 (triad on selection)
-        { Qt::Key_J, "j" },           // -> select note below in the new chord
-        { Qt::Key_K, "k" },           // -> select note above in the new chord
-        { Qt::Key_X, "x" },           // -> action://delete
+        { Qt::Key_Comma, "," },       // leader
+        { Qt::Key_M, "M" },           // major quality
+        { Qt::Key_Return, "" },       // commit root-position triad -> chord-build:0,4,7
+        { Qt::Key_K, "k" },           // select note above within the new chord
+        { Qt::Key_J, "j" },           // select note below
     };
     for (const K& k : seq) {
         context::RawKeyEvent ev;
@@ -168,6 +169,24 @@ void VimController::runSelfTest()
         LOGI() << "VimController SELFTEST: feed key '" << k.text << "'";
         const bool consumed = onKey(ev, true);
         LOGI() << "VimController SELFTEST:   -> consumed=" << (consumed ? "true" : "false");
+    }
+
+    // Report the chord the selection sits in — verifies chord-build placed the
+    // triad tones (expect 3 notes; e.g. a major triad on pitch P = P, P+4, P+7).
+    {
+        using namespace mu::engraving;
+        if (auto notation = globalContext()->currentNotation()) {
+            EngravingItem* el = notation->interaction()->selection()->element();
+            if (el && el->isNote()) {
+                Chord* c = toNote(el)->chord();
+                QStringList ps;
+                for (Note* cn : c->notes()) {
+                    ps << QString::number(cn->pitch());
+                }
+                LOGI() << "VimController SELFTEST: selected chord has " << c->notes().size()
+                       << " notes, pitches [" << ps.join(",").toStdString() << "]";
+            }
+        }
     }
     LOGI() << "VimController SELFTEST: end";
 }
@@ -421,15 +440,6 @@ void VimController::applyOps(const QStringList& cmds)
             }
         } else if (cmd == "insert.enter" || cmd == "insert.exit") {
             dispatchCode("note-input");
-        } else if (head == "chordAdd") {
-            const QString iv = parts.value(1);
-            if (iv == "third") {
-                dispatchCode("interval3");
-            } else if (iv == "fifth") {
-                dispatchCode("interval5");
-            } else if (iv == "seventh") {
-                dispatchCode("interval7");
-            }
         } else if (head == "chord-build") {
             buildChordOnSelection(parts.value(1));
         } else if (head == "chord-drop") {
