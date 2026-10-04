@@ -85,6 +85,7 @@ void VimController::init()
         return;
     }
     LOGI() << "VimController: vim-engine started; registering key interceptor";
+    m_trace = !qEnvironmentVariableIsEmpty("MUSE_VIM_TRACE") || !qEnvironmentVariableIsEmpty("MUSE_VIM_SELFTEST");
     interceptor()->setHandler([this](const context::RawKeyEvent& e, bool phase) {
         return this->onKey(e, phase);
     });
@@ -159,16 +160,18 @@ void VimController::runSelfTest()
         { Qt::Key_K, "k" },           // select note above within the new chord
         { Qt::Key_J, "j" },           // select note below
     };
+    // Feed each key through BOTH phases (ShortcutOverride then KeyPress), exactly
+    // as the qApp event filter does in the real GUI, so the two-phase dedupe path
+    // is exercised headless (not just the SO path).
     for (const K& k : seq) {
         context::RawKeyEvent ev;
         ev.key = k.key;
         ev.modifiers = Qt::NoModifier;
         ev.text = QString::fromUtf8(k.text);
         ev.autoRepeat = false;
-        m_lastKey = -1; // bypass the phase-dedupe path
-        LOGI() << "VimController SELFTEST: feed key '" << k.text << "'";
-        const bool consumed = onKey(ev, true);
-        LOGI() << "VimController SELFTEST:   -> consumed=" << (consumed ? "true" : "false");
+        LOGI() << "VimController SELFTEST: feed key '" << k.text << "' (SO+KP)";
+        onKey(ev, true);    // ShortcutOverride phase
+        onKey(ev, false);   // KeyPress phase
     }
 
     // Report the chord the selection sits in — verifies chord-build placed the
@@ -198,11 +201,22 @@ bool VimController::onKey(const context::RawKeyEvent& e, bool shortcutOverridePh
         return false;
     }
 
+    if (m_trace) {
+        LOGI() << "VimController::onKey " << (shortcutOverridePhase ? "SO" : "KP")
+               << " key=" << e.key << " text='" << e.text.toStdString()
+               << "' mods=" << e.modifiers << " autoRepeat=" << e.autoRepeat
+               << " m_lastKey=" << m_lastKey;
+    }
+
     if (shortcutOverridePhase) {
         QStringList cmds;
         const bool consumed = feedEngine(e, cmds);
         m_lastKey = e.key;
         m_lastConsumed = consumed;
+        if (m_trace) {
+            LOGI() << "VimController::onKey   SO -> consumed=" << consumed
+                   << " cmds=[" << cmds.join("|").toStdString() << "]";
+        }
         if (consumed) {
             applyOps(cmds);
         }
@@ -214,10 +228,17 @@ bool VimController::onKey(const context::RawKeyEvent& e, bool shortcutOverridePh
     if (e.key == m_lastKey) {
         const bool c = m_lastConsumed;
         m_lastKey = -1;
+        if (m_trace) {
+            LOGI() << "VimController::onKey   KP -> deduped (cached consumed=" << c << ")";
+        }
         return c;
     }
     QStringList cmds;
     const bool consumed = feedEngine(e, cmds);
+    if (m_trace) {
+        LOGI() << "VimController::onKey   KP -> fed, consumed=" << consumed
+               << " cmds=[" << cmds.join("|").toStdString() << "]";
+    }
     if (consumed) {
         applyOps(cmds);
     }

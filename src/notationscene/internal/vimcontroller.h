@@ -78,5 +78,6 @@ private:
     int m_lastKey = -1;
     bool m_lastConsumed = false;
     int m_selfTestTries = 0;
+    bool m_trace = false; // MUSE_VIM_TRACE: log every intercepted key + engine reply
 };
 }
