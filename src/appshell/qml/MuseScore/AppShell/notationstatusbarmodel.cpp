@@ -119,10 +119,12 @@ void NotationStatusBarModel::init()
 
     updateCurrentWorkspaceItem();
 
-    vimStatus()->statusChanged().onNotify(this, [this]() {
+    if (vimStatus()) {
+        vimStatus()->statusChanged().onNotify(this, [this]() {
+            emit vimModeStatusChanged();
+        });
         emit vimModeStatusChanged();
-    });
-    emit vimModeStatusChanged();
+    }
 }
 
 QString NotationStatusBarModel::accessibilityInfo() const
@@ -132,7 +134,7 @@ QString NotationStatusBarModel::accessibilityInfo() const
 
 QString NotationStatusBarModel::vimModeStatus() const
 {
-    return vimStatus()->statusText();
+    return vimStatus() ? vimStatus()->statusText() : QString();
 }
 
 MenuItem* NotationStatusBarModel::concertPitchItem()
