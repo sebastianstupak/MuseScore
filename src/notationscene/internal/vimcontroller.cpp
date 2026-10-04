@@ -30,6 +30,16 @@
 #include <QJsonObject>
 #include <QJsonArray>
 
+#include "notation/inotation.h"
+#include "notation/inotationinteraction.h"
+#include "notation/inotationselection.h"
+#include "notation/inotationelements.h"
+#include "engraving/dom/note.h"
+#include "engraving/dom/chord.h"
+#include "engraving/dom/segment.h"
+#include "engraving/dom/score.h"
+#include "engraving/dom/mscore.h"
+
 #include "log.h"
 
 using namespace mu::notation;
@@ -103,16 +113,46 @@ void VimController::maybeScheduleSelfTest()
 void VimController::runSelfTest()
 {
     LOGI() << "VimController SELFTEST: begin (feeding fixed sequence via onKey)";
+
+    // Bootstrap: select the first actual NOTE so selection-dependent ops (the
+    // triad, j/k navigation) have something to act on. In real use the user
+    // clicks a note first; a headless run has no initial selection.
+    {
+        using namespace mu::engraving;
+        if (auto notation = globalContext()->currentNotation()) {
+            Score* score = notation->elements() ? notation->elements()->msScore() : nullptr;
+            Note* firstNote = nullptr;
+            for (Segment* s = score ? score->firstSegment(SegmentType::ChordRest) : nullptr;
+                 s && !firstNote; s = s->next1(SegmentType::ChordRest)) {
+                for (track_idx_t t = 0; t < score->ntracks(); ++t) {
+                    EngravingItem* e = s->element(t);
+                    if (e && e->isChord()) {
+                        firstNote = toChord(e)->downNote();
+                        break;
+                    }
+                }
+            }
+            if (firstNote) {
+                // Select directly (not via a context-gated action) so this works
+                // in a headless run where the notation view isn't focused.
+                notation->interaction()->select({ firstNote }, SelectType::SINGLE);
+                LOGI() << "VimController SELFTEST: selected first note, pitch " << firstNote->pitch();
+            } else {
+                LOGW() << "VimController SELFTEST: no note found to select";
+            }
+        }
+    }
+
     struct K { int key; const char* text; };
     static const K seq[] = {
-        { Qt::Key_L, "l" },           // -> notation-move-right
+        { Qt::Key_L, "l" },           // -> notation-move-right (select a note)
         { Qt::Key_L, "l" },           // -> notation-move-right
         { Qt::Key_H, "h" },           // -> notation-move-left
-        { Qt::Key_K, "k" },           // -> pitch-up      (within-chord-up)
-        { Qt::Key_J, "j" },           // -> pitch-down    (within-chord-down)
-        { Qt::Key_X, "x" },           // -> delete        (delete:element)
         { Qt::Key_Comma, "," },       // -> (leader pending)
-        { Qt::Key_T, "t" },           // -> note-input + interval3 + interval5 (triad)
+        { Qt::Key_T, "t" },           // -> interval3 + interval5 (triad on selection)
+        { Qt::Key_J, "j" },           // -> select note below in the new chord
+        { Qt::Key_K, "k" },           // -> select note above in the new chord
+        { Qt::Key_X, "x" },           // -> action://delete
     };
     for (const K& k : seq) {
         context::RawKeyEvent ev;
@@ -212,6 +252,91 @@ void VimController::dispatchCode(const std::string& code, int times)
     }
 }
 
+void VimController::moveChordNote(bool up, int times)
+{
+    using namespace mu::engraving;
+    if (times <= 0) {
+        times = 1;
+    }
+    LOGI() << "VimController: moveChordNote " << (up ? "up" : "down") << " x" << times;
+
+    for (int step = 0; step < times && step < 1000; ++step) {
+        auto notation = globalContext()->currentNotation();
+        if (!notation) {
+            return;
+        }
+        auto interaction = notation->interaction();
+        if (!interaction) {
+            return;
+        }
+        EngravingItem* el = interaction->selection()->element();
+        if (!el || !el->isNote()) {
+            LOGW() << "VimController: j/k needs a single selected note";
+            return;
+        }
+        Note* note = toNote(el);
+        Chord* chord = note->chord();
+        const int curPitch = note->pitch();
+
+        // 1) Nearest note in the wanted direction within the same chord.
+        EngravingItem* target = nullptr;
+        int bestDelta = 0;
+        for (Note* n : chord->notes()) {
+            if (n == note) {
+                continue;
+            }
+            const int d = n->pitch() - curPitch;
+            if (up && d > 0 && (!target || d < bestDelta)) {
+                target = n;
+                bestDelta = d;
+            } else if (!up && d < 0 && (!target || d > bestDelta)) {
+                target = n;
+                bestDelta = d;
+            }
+        }
+
+        // 2) At the top/bottom of the chord -> cross to the staff above/below
+        //    at the same tick, entering at its nearest (bottom/top) note.
+        if (!target) {
+            Segment* seg = chord->segment();
+            Score* score = note->score();
+            if (!seg || !score) {
+                return;
+            }
+            const staff_idx_t staffIdx = chord->staffIdx();
+            if (up && staffIdx == 0) {
+                return; // already the top staff
+            }
+            const staff_idx_t targetStaff = up ? staffIdx - 1 : staffIdx + 1;
+            if (targetStaff >= score->nstaves()) {
+                return; // no staff below
+            }
+            EngravingItem* found = nullptr;
+            for (size_t v = 0; v < VOICES; ++v) {
+                if (EngravingItem* e = seg->element(targetStaff * VOICES + v)) {
+                    found = e;
+                    break;
+                }
+            }
+            if (!found) {
+                return;
+            }
+            if (found->isChord()) {
+                Chord* c = toChord(found);
+                target = up ? c->downNote() : c->upNote();
+            } else {
+                target = found; // rest or similar -> select it directly
+            }
+        }
+
+        if (!target) {
+            return;
+        }
+        interaction->select({ target }, SelectType::SINGLE);
+        LOGI() << "VimController: j/k selected element at track " << target->track();
+    }
+}
+
 void VimController::applyOps(const QStringList& cmds)
 {
     for (const QString& cmd : cmds) {
@@ -237,11 +362,12 @@ void VimController::applyOps(const QStringList& cmds)
             } else if (target == "score-end") {
                 dispatchCode("last-element");
             } else if (target == "within-chord-up") {
-                // Vertical k: matches MuseScore's native Up arrow (raise pitch).
-                dispatchCode("pitch-up", n);
+                // Vertical k: SELECT the note above within the chord (staff
+                // above at the top). A motion, not an edit.
+                moveChordNote(true, n);
             } else if (target == "within-chord-down") {
-                // Vertical j: matches MuseScore's native Down arrow (lower pitch).
-                dispatchCode("pitch-down", n);
+                // Vertical j: select the note below (staff below at the bottom).
+                moveChordNote(false, n);
             } else {
                 // measure-start (0) / measure-end ($) have no clean native
                 // navigation action yet — honest known gap, left unmapped.

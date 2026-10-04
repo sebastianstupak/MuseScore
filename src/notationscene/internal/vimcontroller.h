@@ -56,6 +56,12 @@ private:
     void applyOps(const QStringList& cmds);
     void dispatchCode(const std::string& code, int times = 1);
 
+    // Vertical note selection (j/k): select the note above/below within the
+    // current chord; at the top/bottom of the chord, cross to the staff
+    // above/below. No native MuseScore action does this, so it drives the
+    // engraving selection model directly.
+    void moveChordNote(bool up, int times);
+
     // Dev/CI self-test: when MUSE_VIM_SELFTEST is set, once a score is open,
     // feed a fixed key sequence through the real onKey() path and log the
     // dispatched actions. Exercises onKey->engine->applyOps->dispatcher without
