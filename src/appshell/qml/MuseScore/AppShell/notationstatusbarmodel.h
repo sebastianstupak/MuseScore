@@ -38,6 +38,7 @@
 #include "workspace/iworkspaceconfiguration.h"
 #include "notation/inotationconfiguration.h"
 #include "context/iglobalcontext.h"
+#include "context/ivimstatus.h"
 #include "global/iglobalconfiguration.h"
 
 #include "rcommand/commandtypes.h"
@@ -56,6 +57,7 @@ class NotationStatusBarModel : public QObject, public QQmlParserStatus, public m
     Q_PROPERTY(QVariantList availableViewModeList READ availableViewModeList_property NOTIFY availableViewModeListChanged)
     Q_PROPERTY(QVariantList availableZoomList READ availableZoomList_property NOTIFY availableZoomListChanged)
     Q_PROPERTY(int currentZoomPercentage READ currentZoomPercentage WRITE setCurrentZoomPercentage NOTIFY currentZoomPercentageChanged)
+    Q_PROPERTY(QString vimModeStatus READ vimModeStatus NOTIFY vimModeStatusChanged)
 
     QML_ELEMENT
 
@@ -66,11 +68,13 @@ class NotationStatusBarModel : public QObject, public QQmlParserStatus, public m
     muse::ContextInject<context::IGlobalContext> context = { this };
     muse::ContextInject<muse::rcommand::ICommandsState> commandsState = { this };
     muse::ContextInject<muse::rcommand::ICommandDispatcher> dispatcher = { this };
+    muse::GlobalInject<context::IVimStatus> vimStatus;
 
 public:
     explicit NotationStatusBarModel(QObject* parent = nullptr);
 
     QString accessibilityInfo() const;
+    QString vimModeStatus() const;
     muse::uicomponents::MenuItem* currentWorkspaceItem();
     muse::uicomponents::MenuItem* concertPitchItem();
     muse::uicomponents::MenuItem* currentViewMode();
@@ -94,6 +98,7 @@ public slots:
 
 signals:
     void accessibilityInfoChanged();
+    void vimModeStatusChanged();
     void currentWorkspaceActionChanged();
     void concertPitchActionChanged();
     void currentViewModeChanged();

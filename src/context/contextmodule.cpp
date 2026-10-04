@@ -26,6 +26,7 @@
 #include "internal/uicontextresolver.h"
 #include "internal/extensioncontextresolver.h"
 #include "internal/inputinterceptor.h"
+#include "internal/vimstatus.h"
 #include "shortcutcontext.h"
 
 #include "muse_framework_config.h"
@@ -48,8 +49,10 @@ std::string ContextModule::moduleName() const
 void ContextModule::registerExports()
 {
     m_inputInterceptor = std::make_shared<InputInterceptor>();
+    m_vimStatus = std::make_shared<VimStatus>();
 
     globalIoc()->registerExport<IInputInterceptor>(moduleName(), m_inputInterceptor);
+    globalIoc()->registerExport<IVimStatus>(moduleName(), m_vimStatus);
 }
 
 IContextSetup* ContextModule::newContext(const muse::modularity::ContextPtr& ctx) const

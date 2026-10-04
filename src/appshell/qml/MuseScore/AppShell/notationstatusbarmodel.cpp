@@ -118,11 +118,21 @@ void NotationStatusBarModel::init()
 #endif
 
     updateCurrentWorkspaceItem();
+
+    vimStatus()->statusChanged().onNotify(this, [this]() {
+        emit vimModeStatusChanged();
+    });
+    emit vimModeStatusChanged();
 }
 
 QString NotationStatusBarModel::accessibilityInfo() const
 {
     return accessibility() ? QString::fromStdString(accessibility()->accessibilityInfo().val) : QString();
+}
+
+QString NotationStatusBarModel::vimModeStatus() const
+{
+    return vimStatus()->statusText();
 }
 
 MenuItem* NotationStatusBarModel::concertPitchItem()

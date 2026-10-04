@@ -30,6 +30,7 @@
 #include "actions/iactionsdispatcher.h"
 #include "context/iglobalcontext.h"
 #include "context/iinputinterceptor.h"
+#include "context/ivimstatus.h"
 
 class QProcess;
 
@@ -43,6 +44,7 @@ class VimController : public muse::Contextable
     muse::ContextInject<muse::actions::IActionsDispatcher> dispatcher = { this };
     muse::ContextInject<context::IGlobalContext> globalContext = { this };
     muse::GlobalInject<context::IInputInterceptor> interceptor;
+    muse::GlobalInject<context::IVimStatus> vimStatus;
 
 public:
     explicit VimController(const muse::modularity::ContextPtr& iocCtx);
@@ -53,6 +55,7 @@ public:
 private:
     bool onKey(const context::RawKeyEvent& e, bool shortcutOverridePhase);
     bool feedEngine(const context::RawKeyEvent& e, QStringList& outCmds);
+    void publishStatus(const QString& mode, const QString& pending);
     void applyOps(const QStringList& cmds);
     void dispatchCode(const std::string& code, int times = 1);
 

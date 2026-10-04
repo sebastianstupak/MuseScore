@@ -73,6 +73,34 @@ Item {
 
         spacing: 4
 
+        Rectangle {
+            id: vimModeChip
+
+            Layout.alignment: Qt.AlignVCenter
+            Layout.preferredHeight: 20
+            Layout.preferredWidth: vimModeText.implicitWidth + 16
+
+            visible: model.vimModeStatus.length > 0
+            radius: 3
+            // NORMAL=blue, INSERT=green, VISUAL=purple
+            color: model.vimModeStatus.indexOf("INSERT") === 0 ? "#2f9e44"
+                   : model.vimModeStatus.indexOf("VISUAL") === 0 ? "#9c36b5"
+                   : "#1971c2"
+
+            StyledTextLabel {
+                id: vimModeText
+                anchors.centerIn: parent
+                text: model.vimModeStatus
+                font.bold: true
+                color: "#ffffff"
+            }
+        }
+
+        SeparatorLine {
+            orientation: Qt.Vertical
+            visible: vimModeChip.visible
+        }
+
         PlaybackLoadingInfo {
             id: playbackLoadingInfo
             Layout.fillWidth: false

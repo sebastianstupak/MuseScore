@@ -25,6 +25,7 @@ target_sources(context PRIVATE
     contextmodule.h
     iglobalcontext.h
     iinputinterceptor.h
+    ivimstatus.h
     iplaybackstate.h
     uicontext.h
     shortcutcontext.h
@@ -33,6 +34,8 @@ target_sources(context PRIVATE
     internal/globalcontext.h
     internal/inputinterceptor.cpp
     internal/inputinterceptor.h
+    internal/vimstatus.cpp
+    internal/vimstatus.h
     internal/playbackstate.cpp
     internal/playbackstate.h
     internal/uicontextresolver.cpp

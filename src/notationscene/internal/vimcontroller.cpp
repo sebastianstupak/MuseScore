@@ -92,6 +92,7 @@ void VimController::init()
     interceptor()->setHandler([this](const context::RawKeyEvent& e, bool phase) {
         return this->onKey(e, phase);
     });
+    vimStatus()->setStatusText("NORMAL"); // seed the footer indicator
 
     maybeScheduleSelfTest();
 }
@@ -305,7 +306,23 @@ bool VimController::feedEngine(const context::RawKeyEvent& e, QStringList& outCm
     for (const QJsonValue& v : arr) {
         outCmds << v.toString();
     }
+    publishStatus(out.value("mode").toString(), out.value("pending").toString());
     return consumed;
+}
+
+void VimController::publishStatus(const QString& mode, const QString& pending)
+{
+    QString label;
+    if (mode == "insert") {
+        label = "INSERT";
+    } else if (mode == "visual") {
+        label = "VISUAL";
+    } else if (mode == "operator-pending") {
+        label = "O-PEND";
+    } else {
+        label = "NORMAL";
+    }
+    vimStatus()->setStatusText(pending.isEmpty() ? label : (label + "  " + pending));
 }
 
 void VimController::dispatchCode(const std::string& code, int times)

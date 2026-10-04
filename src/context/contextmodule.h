@@ -31,6 +31,7 @@ class GlobalContext;
 class UiContextResolver;
 class ExtensionContextResolver;
 class InputInterceptor;
+class VimStatus;
 class ContextModule : public muse::modularity::IModuleSetup
 {
 public:
@@ -43,6 +44,7 @@ public:
 
 private:
     std::shared_ptr<InputInterceptor> m_inputInterceptor;
+    std::shared_ptr<VimStatus> m_vimStatus;
 };
 
 class ContextModuleContext : public muse::modularity::IContextSetup
