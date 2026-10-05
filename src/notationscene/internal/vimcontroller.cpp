@@ -27,6 +27,7 @@
 #include <QKeyEvent>
 #include <QTimer>
 #include <QMap>
+#include <QSet>
 #include <QGuiApplication>
 #include <QWindow>
 #include <QCoreApplication>
@@ -126,6 +127,7 @@ void VimController::runSelfTest()
     // Bootstrap: select the first actual NOTE so selection-dependent ops
     // (chord-build, j/k navigation) have something to act on. In real use the
     // user clicks a note first; a headless run has no initial selection.
+    int basePitch = -1; // the anchor note's MIDI pitch (for the PASS/FAIL check)
     {
         using namespace mu::engraving;
         if (auto notation = globalContext()->currentNotation()) {
@@ -145,7 +147,8 @@ void VimController::runSelfTest()
                 // Select directly (not via a context-gated action) so this works
                 // in a headless run where the notation view isn't focused.
                 notation->interaction()->select({ firstNote }, SelectType::SINGLE);
-                LOGI() << "VimController SELFTEST: selected first note, pitch " << firstNote->pitch();
+                basePitch = firstNote->pitch();
+                LOGI() << "VimController SELFTEST: selected first note, pitch " << basePitch;
             } else {
                 LOGW() << "VimController SELFTEST: no note found to select";
             }
@@ -194,23 +197,38 @@ void VimController::runSelfTest()
         QCoreApplication::sendEvent(target, &kp);
     }
 
-    // Report the chord the selection sits in — verifies chord-build placed the
-    // triad tones (expect 3 notes; e.g. a major triad on pitch P = P, P+4, P+7).
+    // Self-assert: after ,M<CR> the selected note's chord must contain the
+    // major-triad tones relative to the anchor pitch P: P, P+4, P+7. Emit a
+    // single definitive PASS/FAIL line a test runner can grep for.
+    QString verdict = "FAIL";
+    QString detail;
     {
         using namespace mu::engraving;
-        if (auto notation = globalContext()->currentNotation()) {
-            EngravingItem* el = notation->interaction()->selection()->element();
-            if (el && el->isNote()) {
-                Chord* c = toNote(el)->chord();
-                QStringList ps;
-                for (Note* cn : c->notes()) {
-                    ps << QString::number(cn->pitch());
-                }
-                LOGI() << "VimController SELFTEST: selected chord has " << c->notes().size()
-                       << " notes, pitches [" << ps.join(",").toStdString() << "]";
+        auto notation = globalContext()->currentNotation();
+        EngravingItem* el = notation ? notation->interaction()->selection()->element() : nullptr;
+        if (basePitch < 0) {
+            detail = "no base note selected at bootstrap";
+        } else if (!el || !el->isNote()) {
+            detail = "no note selected after ,M<CR>";
+        } else {
+            Chord* c = toNote(el)->chord();
+            QStringList ps;
+            QSet<int> pitches;
+            for (Note* cn : c->notes()) {
+                ps << QString::number(cn->pitch());
+                pitches.insert(cn->pitch());
             }
+            const bool ok = pitches.contains(basePitch)
+                            && pitches.contains(basePitch + 4)
+                            && pitches.contains(basePitch + 7);
+            verdict = ok ? "PASS" : "FAIL";
+            detail = QString("chord=[%1] expected major triad on %2 = {%3,%4,%5}")
+                     .arg(ps.join(","))
+                     .arg(basePitch).arg(basePitch).arg(basePitch + 4).arg(basePitch + 7);
         }
     }
+    LOGI() << "VimController SELFTEST: " << detail.toStdString();
+    LOGI() << "VIMSELFTEST: " << verdict.toStdString(); // grep marker for the e2e runner
     LOGI() << "VimController SELFTEST: end";
 }
 
