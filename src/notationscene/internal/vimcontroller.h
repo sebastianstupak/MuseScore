@@ -68,6 +68,11 @@ private:
     // engraving selection model directly.
     void moveChordNote(bool up, int times);
 
+    // 0 / $ — select the first / last chord-rest of the current measure. No
+    // native non-extending "measure edge" action exists, so drive selection
+    // directly (like moveChordNote).
+    void moveToMeasureEdge(bool toEnd);
+
     // chord-build:<csv-offsets> — add tones (semitone offsets from the
     // selected note's pitch) to the selected note's chord via the engraving
     // NoteInput API, wrapped in a single undoable transaction.

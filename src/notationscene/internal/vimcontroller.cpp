@@ -288,6 +288,21 @@ void VimController::runSelfTest()
         check("j/k navigate within chord", pk1 == P + 4 && pk2 == P + 7 && pj == P + 4, detail);
     }
 
+    // 0 / $: select first / last chord-rest of the measure (direct selection).
+    // $ must land on a note; 0 must return to the measure's first note (the anchor P).
+    {
+        injOne('\x1b');
+        reselect();
+        inject("$");
+        EngravingItem* e1 = notation->interaction()->selection()->element();
+        const bool endIsNote = e1 && e1->isNote();
+        inject("0");
+        EngravingItem* e2 = notation->interaction()->selection()->element();
+        const int p0 = (e2 && e2->isNote()) ? toNote(e2)->pitch() : -1;
+        check("0/$ measure-edge nav", endIsNote && p0 == P,
+              QString("$ note=%1, 0 pitch=%2 (want %3)").arg(endIsNote).arg(p0).arg(P));
+    }
+
     // HELP: ? and ,? make the engine return the cheatsheet (observed via the flag).
     {
         injOne('\x1b');
@@ -615,6 +630,50 @@ void VimController::moveChordNote(bool up, int times)
     }
 }
 
+void VimController::moveToMeasureEdge(bool toEnd)
+{
+    using namespace mu::engraving;
+    auto notation = globalContext()->currentNotation();
+    if (!notation) {
+        return;
+    }
+    auto interaction = notation->interaction();
+    if (!interaction) {
+        return;
+    }
+    EngravingItem* el = interaction->selection()->element();
+    if (!el) {
+        LOGW() << "VimController: 0/$ needs a single selection";
+        return;
+    }
+    const track_idx_t track = el->track();
+    Measure* m = el->findMeasure();
+    if (!m) {
+        return;
+    }
+    // Scan the measure's chord/rest segments on this track; keep the first for
+    // '0', the last for '$'.
+    EngravingItem* found = nullptr;
+    for (Segment* s = m->first(SegmentType::ChordRest); s && s->measure() == m;
+         s = s->next1(SegmentType::ChordRest)) {
+        if (EngravingItem* e = s->element(track)) {
+            found = e;
+            if (!toEnd) {
+                break;
+            }
+        }
+    }
+    if (!found) {
+        return;
+    }
+    if (found->isChord()) {
+        found = toChord(found)->downNote(); // land on a note, like the other motions
+    }
+    interaction->select({ found }, SelectType::SINGLE);
+    LOGI() << "VimController: measure " << (toEnd ? "end ($)" : "start (0)")
+           << " -> track " << found->track();
+}
+
 void VimController::buildChordOnSelection(const QString& offsetsCsv)
 {
     using namespace mu::engraving;
@@ -692,9 +751,13 @@ void VimController::applyOps(const QStringList& cmds)
             } else if (target == "within-chord-down") {
                 // Vertical j: select the note below (staff below at the bottom).
                 moveChordNote(false, n);
+            } else if (target == "measure-start") {
+                // 0: select the first chord/rest of the current measure. No native
+                // non-extending action exists, so drive the selection directly.
+                moveToMeasureEdge(false);
+            } else if (target == "measure-end") {
+                moveToMeasureEdge(true); // $: last chord/rest of the measure
             } else {
-                // measure-start (0) / measure-end ($) have no clean native
-                // navigation action yet — honest known gap, left unmapped.
                 LOGW() << "VimController: unmapped move target " << target.toStdString();
             }
         } else if (cmd == "insert.enter" || cmd == "insert.exit") {
