@@ -341,6 +341,20 @@ void VimController::runSelfTest()
     expectDispatch("voice V3", "V3", { "voice-3" });
     expectDispatch("voice V4", "V4", { "voice-4" });
 
+    // EXPRESSION & PITCH INFLECTION
+    expectDispatch("accid =s", "=s", { "sharp" });
+    expectDispatch("accid =f", "=f", { "flat" });
+    expectDispatch("accid =n", "=n", { "nat" });
+    expectDispatch("accid =S", "=S", { "sharp2" });
+    expectDispatch("accid =F", "=F", { "flat2" });
+    expectDispatch("octave ]", "]", { "pitch-up-octave" });
+    expectDispatch("octave [", "[", { "pitch-down-octave" });
+    expectDispatch("rest r", "r", { "pad-rest" });
+    expectDispatch("dyn +", "+", { "increase-dynamic" });
+    expectDispatch("dyn -", "-", { "decrease-dynamic" });
+    expectDispatch("hairpin <", "<", { "add-hairpin" });
+    expectDispatch("hairpin >", ">", { "add-hairpin-reverse" });
+
     // VISUAL: v enters, a motion extends (select-*), an operator applies + exits.
     expectDispatch("visual v l y", "vly", { "select-next-chord", "action://copy" });
     expectDispatch("visual v h d", "vhd", { "select-prev-chord", "action://delete" });
