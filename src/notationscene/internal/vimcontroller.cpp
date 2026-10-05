@@ -270,12 +270,34 @@ void VimController::runSelfTest()
               QString("pitches=[%1] want {%2,%3,%4}").arg(got.join(",")).arg(P).arg(P + 4).arg(P + 7));
     }
 
-    // j/k navigate WITHIN that chord: k -> P+4 -> P+7, then j -> P+4.
+    // j/k navigate WITHIN that chord: k steps UP through the chord's notes in
+    // pitch order, j steps back down. The anchor's beat in a real score may
+    // already carry extra notes (adeste's anchor chord has a pre-existing note
+    // between the triad tones), so derive the expected pitches from the chord
+    // that actually exists rather than assuming a clean {P,P+4,P+7} triad.
     {
         injOne('\x1b');
         reselect();
-        inject(",M\r");   // ensure the triad exists; leaves the anchor (P) selected
+        inject(",M\r");   // ensure a multi-note chord exists; leaves the anchor (P) selected
         reselect();
+        // Snapshot the chord's unique pitches ascending (QMap keys sort by key).
+        QMap<int, int> pitchSet;
+        int anchorPitch = -1;
+        if (EngravingItem* a0 = notation->interaction()->selection()->element()) {
+            if (a0->isNote()) {
+                anchorPitch = toNote(a0)->pitch();
+                for (Note* cn : toNote(a0)->chord()->notes()) {
+                    pitchSet.insert(cn->pitch(), 1);
+                }
+            }
+        }
+        const QList<int> sorted = pitchSet.keys();
+        const int ai = sorted.indexOf(anchorPitch);
+        // Need two notes above the anchor to exercise two upward k-steps.
+        const bool navigable = ai >= 0 && ai + 2 < sorted.size();
+        const int w1 = navigable ? sorted.at(ai + 1) : -1; // one up
+        const int w2 = navigable ? sorted.at(ai + 2) : -1; // two up
+
         inject("k");
         EngravingItem* a1 = notation->interaction()->selection()->element();
         const int pk1 = (a1 && a1->isNote()) ? toNote(a1)->pitch() : -1;
@@ -285,11 +307,16 @@ void VimController::runSelfTest()
         inject("j");
         EngravingItem* a3 = notation->interaction()->selection()->element();
         const int pj = (a3 && a3->isNote()) ? toNote(a3)->pitch() : -1;
+        QStringList chordPs;
+        for (int x : sorted) {
+            chordPs << QString::number(x);
+        }
         const QString detail = "k->" + QString::number(pk1) + " k->" + QString::number(pk2)
                                + " j->" + QString::number(pj) + "; want "
-                               + QString::number(P + 4) + "," + QString::number(P + 7)
-                               + "," + QString::number(P + 4);
-        check("j/k navigate within chord", pk1 == P + 4 && pk2 == P + 7 && pj == P + 4, detail);
+                               + QString::number(w1) + "," + QString::number(w2)
+                               + "," + QString::number(w1) + " (chord=[" + chordPs.join(",") + "])";
+        check("j/k navigate within chord",
+              navigable && pk1 == w1 && pk2 == w2 && pj == w1, detail);
     }
 
     // 0 / $: select first / last chord-rest of the measure (direct selection).
