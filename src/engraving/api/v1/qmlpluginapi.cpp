@@ -41,6 +41,9 @@
 #include "notation/inotationviewstate.h"
 
 #include "engraving/dom/mscore.h" // SelectType
+#include "engraving/dom/score.h"       // T2: Score::dummy() for element construction
+#include "engraving/dom/accidental.h"  // T2: Accidental / AccidentalType (dropSingle)
+#include "engraving/dom/clef.h"         // T2: Clef / ClefType / ClefTypeList (dropSingle)
 
 // api
 #include "engravingapiv1.h"
@@ -604,6 +607,50 @@ void PluginAPI::putNote(qreal x, qreal y, bool replace, bool insert)
     notation->interaction()->noteInput()->putNote(muse::PointF(x, y), replace, insert);
 }
 
+void PluginAPI::putRest(qreal x, qreal y, const QString& duration)
+{
+    using namespace mu::engraving;
+    notation::INotationPtr notation = context()->currentNotation();
+    if (!notation) {
+        return;
+    }
+    auto noteInput = notation->interaction()->noteInput();
+    if (!noteInput) {
+        return;
+    }
+
+    DurationType d = DurationType::V_QUARTER;
+    if (duration == "whole") {
+        d = DurationType::V_WHOLE;
+    } else if (duration == "half") {
+        d = DurationType::V_HALF;
+    } else if (duration == "quarter") {
+        d = DurationType::V_QUARTER;
+    } else if (duration == "eighth") {
+        d = DurationType::V_EIGHTH;
+    } else if (duration == "16th") {
+        d = DurationType::V_16TH;
+    } else if (duration == "32nd") {
+        d = DurationType::V_32ND;
+    } else if (duration == "64th") {
+        d = DurationType::V_64TH;
+    }
+
+    // Place the rest via the same pointer path as putNote, with rest mode on.
+    // Enter note input if it isn't already active, and restore the prior state.
+    const bool wasActive = noteInput->isNoteInputMode();
+    if (!wasActive) {
+        noteInput->startNoteInput();
+    }
+    noteInput->setDuration(d);
+    noteInput->setRestMode(true);
+    noteInput->putNote(muse::PointF(x, y), false, false);
+    noteInput->setRestMode(false);
+    if (!wasActive) {
+        noteInput->endNoteInput();
+    }
+}
+
 void PluginAPI::selectElement(apiv1::EngravingItem* element, bool add)
 {
     notation::INotationPtr notation = context()->currentNotation();
@@ -625,6 +672,64 @@ void PluginAPI::deleteSelection()
         return;
     }
     notation->interaction()->deleteSelection();
+}
+
+bool PluginAPI::dropSingle(const QString& element, qreal x, qreal y)
+{
+    // NOTE: this method lives in namespace mu::engraving::apiv1, where bare
+    // `Score`/`EngravingItem` name the apiv1 WRAPPER types — so the engraving
+    // DOM types must be fully qualified as mu::engraving::...
+    notation::INotationPtr notation = context()->currentNotation();
+    if (!notation) {
+        return false;
+    }
+    mu::engraving::Score* score = notation->elements() ? notation->elements()->msScore() : nullptr;
+    if (!score) {
+        return false;
+    }
+    auto interaction = notation->interaction();
+
+    // Target the element under the point so the applied element lands there
+    // (accidental -> selected note; clef -> selected measure/segment).
+    const double scaling = notation->viewState()->matrix().m11();
+    const float w = static_cast<float>(3.0 / (scaling != 0.0 ? scaling : 1.0));
+    if (mu::engraving::EngravingItem* hit = interaction->hitElement(muse::PointF(x, y), w)) {
+        interaction->select({ hit }, mu::engraving::SelectType::REPLACE);
+    }
+
+    // Build the element palette-style; keep it alive across applyPaletteElement
+    // (which clones it, exactly like a palette double-click).
+    std::shared_ptr<mu::engraving::EngravingItem> built;
+    if (element == "sharp" || element == "flat" || element == "natural" || element == "double_sharp") {
+        mu::engraving::AccidentalType at = mu::engraving::AccidentalType::NATURAL;
+        if (element == "sharp") {
+            at = mu::engraving::AccidentalType::SHARP;
+        } else if (element == "flat") {
+            at = mu::engraving::AccidentalType::FLAT;
+        } else if (element == "double_sharp") {
+            at = mu::engraving::AccidentalType::SHARP2;
+        }
+        auto ac = mu::engraving::Factory::makeAccidental(score->dummy());
+        ac->setAccidentalType(at);
+        built = ac;
+    } else if (element == "g_clef" || element == "f_clef" || element == "c_clef") {
+        mu::engraving::ClefType ct = mu::engraving::ClefType::G;
+        if (element == "f_clef") {
+            ct = mu::engraving::ClefType::F;
+        } else if (element == "c_clef") {
+            ct = mu::engraving::ClefType::C3;
+        }
+        auto clef = mu::engraving::Factory::makeClef(score->dummy()->segment());
+        clef->setClefType(mu::engraving::ClefTypeList(ct, ct));
+        built = clef;
+    } else {
+        return false;
+    }
+
+    if (!built) {
+        return false;
+    }
+    return interaction->applyPaletteElement(built.get(), {});
 }
 
 QString PluginAPI::pluginType() const

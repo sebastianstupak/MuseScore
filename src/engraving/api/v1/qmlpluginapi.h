@@ -564,10 +564,21 @@ public:
     /// Add a note at a score point (click-to-add). \p replace overwrites the note
     /// at that position; \p insert inserts rather than overwriting.
     Q_INVOKABLE void putNote(qreal x, qreal y, bool replace = false, bool insert = false);
+    /// Add a rest of \p duration at a score point. \p duration is a neume/proto
+    /// duration token ("whole","half","quarter","eighth","16th","32nd","64th").
+    /// Enters note input if needed, sets the duration + rest mode, places via the
+    /// same pointer path as putNote, then restores the prior input state.
+    Q_INVOKABLE void putRest(qreal x, qreal y, const QString& duration);
     /// Select an element; \p add extends the current selection instead of replacing.
     Q_INVOKABLE void selectElement(apiv1::EngravingItem* element, bool add = false);
     /// Delete the current selection.
     Q_INVOKABLE void deleteSelection();
+    /// Drop a single palette-style element at a score point (accidental/clef/...).
+    /// \p element is a neume/proto element token ("sharp","flat","natural",
+    /// "double_sharp","g_clef","f_clef","c_clef"). Selects the nearest element at
+    /// the point, then applies the built element like a palette double-click.
+    /// Returns true if an element was built and applied.
+    Q_INVOKABLE bool dropSingle(const QString& element, qreal x, qreal y);
     /// \endcond
 
     Q_INVOKABLE void log(const QString&);
