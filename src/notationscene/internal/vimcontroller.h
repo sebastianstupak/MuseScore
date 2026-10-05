@@ -85,5 +85,14 @@ private:
     bool m_lastConsumed = false;
     int m_selfTestTries = 0;
     bool m_trace = false; // MUSE_VIM_TRACE: log every intercepted key + engine reply
+
+    // --- UI e2e self-test state (MUSE_VIM_SELFTEST) ---
+    // The self-test injects real QKeyEvents through the qApp filter and asserts
+    // either the engraving outcome (chord-build, j/k) or, for context-gated
+    // actions that no-op in a headless run, the exact action code dispatched.
+    QStringList m_dispatched;     // action codes dispatched while m_recording
+    bool m_recording = false;     // when true, dispatchCode() records into m_dispatched
+    bool m_helpRequested = false; // set when an engine reply carried help text
+    bool m_inSelfTest = false;    // suppress the help dialog during the automated run
 };
 }

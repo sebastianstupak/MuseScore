@@ -122,46 +122,29 @@ void VimController::maybeScheduleSelfTest()
 
 void VimController::runSelfTest()
 {
-    LOGI() << "VimController SELFTEST: begin (feeding fixed sequence via onKey)";
+    using namespace mu::engraving;
+    LOGI() << "VimController SELFTEST: begin (UI e2e: real QKeyEvents through the qApp filter)";
 
-    // Bootstrap: select the first actual NOTE so selection-dependent ops
-    // (chord-build, j/k navigation) have something to act on. In real use the
-    // user clicks a note first; a headless run has no initial selection.
-    int basePitch = -1; // the anchor note's MIDI pitch (for the PASS/FAIL check)
-    {
-        using namespace mu::engraving;
-        if (auto notation = globalContext()->currentNotation()) {
-            Score* score = notation->elements() ? notation->elements()->msScore() : nullptr;
-            Note* firstNote = nullptr;
-            for (Segment* s = score ? score->firstSegment(SegmentType::ChordRest) : nullptr;
-                 s && !firstNote; s = s->next1(SegmentType::ChordRest)) {
-                for (track_idx_t t = 0; t < score->ntracks(); ++t) {
-                    EngravingItem* e = s->element(t);
-                    if (e && e->isChord()) {
-                        firstNote = toChord(e)->downNote();
-                        break;
-                    }
-                }
-            }
-            if (firstNote) {
-                // Select directly (not via a context-gated action) so this works
-                // in a headless run where the notation view isn't focused.
-                notation->interaction()->select({ firstNote }, SelectType::SINGLE);
-                basePitch = firstNote->pitch();
-                LOGI() << "VimController SELFTEST: selected first note, pitch " << basePitch;
-            } else {
-                LOGW() << "VimController SELFTEST: no note found to select";
-            }
-        }
+    // Each case injects a key sequence exactly as Qt delivers real keys
+    // (ShortcutOverride then KeyPress) so the FULL path runs: qApp filter
+    // (InputInterceptor) -> onKey -> vim-engine subprocess -> applyOps. The only
+    // link not exercised is the OS->Qt key-code translation, which OS-level
+    // injection cannot reach in a headless/agent shell.
+    //
+    // Two kinds of assertion:
+    //  - OUTCOME: direct-engraving ops (chord-build, j/k select) actually run
+    //    headless, so we assert the resulting score/selection state.
+    //  - DISPATCH: context-gated actions (pitch/tie/articulations/durations/
+    //    voices/copy/...) no-op without notation focus, but dispatchCode() still
+    //    records the code, so we assert the exact action dispatched per keystroke.
+
+    auto notation = globalContext()->currentNotation();
+    if (!notation) {
+        LOGW() << "VimController SELFTEST: no current notation";
+        LOGI() << "VIMSELFTEST: FAIL";
+        return;
     }
 
-    // Inject REAL QKeyEvents through the application so the FULL interception
-    // path runs: qApp event filter (InputInterceptor) -> handler -> onKey -> engine
-    // -> applyOps. This is the entire GUI key path minus only the OS->Qt key-code
-    // translation (which OS-level injection cannot reach in this environment). Each
-    // key is sent as ShortcutOverride then KeyPress, exactly as Qt delivers real
-    // keys. Enter uses Qt::Key_Enter (keypad code 0x01000005) to exercise the
-    // commit path for that variant; 'M' carries Shift as a real keyboard would.
     QWindow* target = QGuiApplication::focusWindow();
     if (!target) {
         const QList<QWindow*> tops = QGuiApplication::topLevelWindows();
@@ -177,58 +160,208 @@ void VimController::runSelfTest()
     }
     if (!target) {
         LOGW() << "VimController SELFTEST: no window to inject QKeyEvents into";
+        LOGI() << "VIMSELFTEST: FAIL";
         return;
     }
-    LOGI() << "VimController SELFTEST: injecting via QKeyEvents (through the qApp filter)";
 
-    struct K { int key; const char* text; Qt::KeyboardModifiers mods; };
-    const K seq[] = {
-        { Qt::Key_Comma, ",", Qt::NoModifier },
-        { Qt::Key_M, "M", Qt::ShiftModifier },        // capital M, as a real keyboard sends
-        { Qt::Key_Enter, "\r", Qt::NoModifier },      // keypad Enter (0x01000005) -> commit
-        { Qt::Key_K, "k", Qt::NoModifier },           // select note above within the new chord
-        { Qt::Key_J, "j", Qt::NoModifier },           // select note below
-    };
-    for (const K& k : seq) {
-        LOGI() << "VimController SELFTEST: inject key '" << k.text << "'";
-        QKeyEvent so(QEvent::ShortcutOverride, k.key, k.mods, QString::fromUtf8(k.text));
-        QCoreApplication::sendEvent(target, &so);
-        QKeyEvent kp(QEvent::KeyPress, k.key, k.mods, QString::fromUtf8(k.text));
-        QCoreApplication::sendEvent(target, &kp);
-    }
-
-    // Self-assert: after ,M<CR> the selected note's chord must contain the
-    // major-triad tones relative to the anchor pitch P: P, P+4, P+7. Emit a
-    // single definitive PASS/FAIL line a test runner can grep for.
-    QString verdict = "FAIL";
-    QString detail;
-    {
-        using namespace mu::engraving;
-        auto notation = globalContext()->currentNotation();
-        EngravingItem* el = notation ? notation->interaction()->selection()->element() : nullptr;
-        if (basePitch < 0) {
-            detail = "no base note selected at bootstrap";
-        } else if (!el || !el->isNote()) {
-            detail = "no note selected after ,M<CR>";
-        } else {
-            Chord* c = toNote(el)->chord();
-            QStringList ps;
-            QSet<int> pitches;
-            for (Note* cn : c->notes()) {
-                ps << QString::number(cn->pitch());
-                pitches.insert(cn->pitch());
+    // Re-find the first NOTE fresh each time (so a mutating action can never
+    // leave the suite holding a dangling pointer); cache its pitch once.
+    auto findFirstNote = [&]() -> Note* {
+        Score* score = notation->elements() ? notation->elements()->msScore() : nullptr;
+        for (Segment* s = score ? score->firstSegment(SegmentType::ChordRest) : nullptr;
+             s; s = s->next1(SegmentType::ChordRest)) {
+            for (track_idx_t t = 0; t < score->ntracks(); ++t) {
+                EngravingItem* e = s->element(t);
+                if (e && e->isChord()) {
+                    return toChord(e)->downNote();
+                }
             }
-            const bool ok = pitches.contains(basePitch)
-                            && pitches.contains(basePitch + 4)
-                            && pitches.contains(basePitch + 7);
-            verdict = ok ? "PASS" : "FAIL";
-            detail = QString("chord=[%1] expected major triad on %2 = {%3,%4,%5}")
-                     .arg(ps.join(","))
-                     .arg(basePitch).arg(basePitch).arg(basePitch + 4).arg(basePitch + 7);
         }
+        return nullptr;
+    };
+    Note* anchor = findFirstNote();
+    if (!anchor) {
+        LOGW() << "VimController SELFTEST: no note found to anchor on";
+        LOGI() << "VIMSELFTEST: FAIL";
+        return;
     }
-    LOGI() << "VimController SELFTEST: " << detail.toStdString();
-    LOGI() << "VIMSELFTEST: " << verdict.toStdString(); // grep marker for the e2e runner
+    const int P = anchor->pitch();
+    LOGI() << "VimController SELFTEST: anchor note pitch " << P;
+
+    m_inSelfTest = true;
+
+    // --- injection + assertion helpers ---
+    // '\r' -> Return (commit), '\x1b' -> Escape; every other char is sent as its
+    // literal text with key code 0 (the engine keys on text except for Enter/Esc).
+    auto injOne = [&](char ch) {
+        int key = 0;
+        QString textStr;
+        if (ch == '\r') {
+            key = Qt::Key_Return;
+        } else if (ch == '\x1b') {
+            key = Qt::Key_Escape;
+        } else {
+            textStr = QString(QChar(ch));
+        }
+        QKeyEvent so(QEvent::ShortcutOverride, key, Qt::NoModifier, textStr);
+        QCoreApplication::sendEvent(target, &so);
+        QKeyEvent kp(QEvent::KeyPress, key, Qt::NoModifier, textStr);
+        QCoreApplication::sendEvent(target, &kp);
+    };
+    auto inject = [&](const char* seq) {
+        for (const char* p = seq; *p; ++p) {
+            injOne(*p);
+        }
+    };
+    auto reselect = [&]() {
+        if (Note* a = findFirstNote()) {
+            notation->interaction()->select({ a }, SelectType::SINGLE);
+        }
+    };
+
+    int pass = 0, fail = 0;
+    QStringList failures;
+
+    auto check = [&](const char* name, bool ok, const QString& detail) {
+        if (ok) {
+            ++pass;
+        } else {
+            ++fail;
+            failures << QString("%1 (%2)").arg(name, detail);
+            LOGW() << "VimController SELFTEST: FAILED " << name << " -- " << detail.toStdString();
+        }
+    };
+    // DISPATCH case: `seq` must produce EXACTLY `expected` dispatched action codes.
+    auto expectDispatch = [&](const char* name, const char* seq, const QStringList& expected) {
+        injOne('\x1b');            // clear any half-entered engine state (not recorded)
+        reselect();
+        m_dispatched.clear();
+        m_recording = true;
+        inject(seq);
+        m_recording = false;
+        check(name, m_dispatched == expected,
+              QString("got [%1] expected [%2]").arg(m_dispatched.join("|"), expected.join("|")));
+    };
+
+    // ===== OUTCOME cases first, on a pristine score =====
+
+    // ,M<CR> builds a major triad {P, P+4, P+7} on the selection.
+    {
+        injOne('\x1b');
+        reselect();
+        inject(",M\r");
+        EngravingItem* el = notation->interaction()->selection()->element();
+        QSet<int> ps;
+        if (el && el->isNote()) {
+            for (Note* cn : toNote(el)->chord()->notes()) {
+                ps.insert(cn->pitch());
+            }
+        }
+        QStringList got;
+        for (int x : ps) {
+            got << QString::number(x);
+        }
+        check("chord ,M<CR> builds major triad",
+              ps.contains(P) && ps.contains(P + 4) && ps.contains(P + 7),
+              QString("pitches=[%1] want {%2,%3,%4}").arg(got.join(",")).arg(P).arg(P + 4).arg(P + 7));
+    }
+
+    // j/k navigate WITHIN that chord: k -> P+4 -> P+7, then j -> P+4.
+    {
+        injOne('\x1b');
+        reselect();
+        inject(",M\r");   // ensure the triad exists; leaves the anchor (P) selected
+        reselect();
+        inject("k");
+        EngravingItem* a1 = notation->interaction()->selection()->element();
+        const int pk1 = (a1 && a1->isNote()) ? toNote(a1)->pitch() : -1;
+        inject("k");
+        EngravingItem* a2 = notation->interaction()->selection()->element();
+        const int pk2 = (a2 && a2->isNote()) ? toNote(a2)->pitch() : -1;
+        inject("j");
+        EngravingItem* a3 = notation->interaction()->selection()->element();
+        const int pj = (a3 && a3->isNote()) ? toNote(a3)->pitch() : -1;
+        const QString detail = "k->" + QString::number(pk1) + " k->" + QString::number(pk2)
+                               + " j->" + QString::number(pj) + "; want "
+                               + QString::number(P + 4) + "," + QString::number(P + 7)
+                               + "," + QString::number(P + 4);
+        check("j/k navigate within chord", pk1 == P + 4 && pk2 == P + 7 && pj == P + 4, detail);
+    }
+
+    // HELP: ? and ,? make the engine return the cheatsheet (observed via the flag).
+    {
+        injOne('\x1b');
+        reselect();
+        m_helpRequested = false;
+        inject("?");
+        check("help ?", m_helpRequested, "? did not request help");
+        m_helpRequested = false;
+        inject(",?");
+        check("help ,?", m_helpRequested, ",? did not request help");
+    }
+
+    // ===== DISPATCH cases: assert the exact action code per keystroke =====
+
+    // MOTION
+    expectDispatch("motion l", "l", { "notation-move-right" });
+    expectDispatch("motion h", "h", { "notation-move-left" });
+    expectDispatch("motion w", "w", { "notation-move-right-quickly" });
+    expectDispatch("motion b", "b", { "notation-move-left-quickly" });
+    expectDispatch("motion gg", "gg", { "first-element" });
+    expectDispatch("motion G", "G", { "last-element" });
+
+    // PITCH / STEMS (non-deleting)
+    expectDispatch("pitch K", "K", { "pitch-up" });
+    expectDispatch("pitch J", "J", { "pitch-down" });
+    expectDispatch("tie t", "t", { "tie" });
+    expectDispatch("flip f", "f", { "flip" });
+
+    // ARTICULATIONS (a leader)
+    expectDispatch("artic as", "as", { "add-staccato" });
+    expectDispatch("artic aa", "aa", { "add-sforzato" });
+    expectDispatch("artic at", "at", { "add-tenuto" });
+    expectDispatch("artic am", "am", { "add-marcato" });
+    expectDispatch("artic al", "al", { "add-slur" });
+
+    // DURATIONS (o leader) + tuplets + dot
+    expectDispatch("dur ow", "ow", { "pad-note-1" });
+    expectDispatch("dur oh", "oh", { "pad-note-2" });
+    expectDispatch("dur oq", "oq", { "pad-note-4" });
+    expectDispatch("dur oe", "oe", { "pad-note-8" });
+    expectDispatch("dur os", "os", { "pad-note-16" });
+    expectDispatch("dur ot", "ot", { "pad-note-32" });
+    expectDispatch("dur o.", "o.", { "pad-dot" });
+    expectDispatch("tuplet o2", "o2", { "duplet" });
+    expectDispatch("tuplet o3", "o3", { "triplet" });
+    expectDispatch("tuplet o4", "o4", { "quadruplet" });
+
+    // VOICES (V leader)
+    expectDispatch("voice V1", "V1", { "voice-1" });
+    expectDispatch("voice V2", "V2", { "voice-2" });
+    expectDispatch("voice V3", "V3", { "voice-3" });
+    expectDispatch("voice V4", "V4", { "voice-4" });
+
+    // VISUAL: v enters, a motion extends (select-*), an operator applies + exits.
+    expectDispatch("visual v l y", "vly", { "select-next-chord", "action://copy" });
+    expectDispatch("visual v h d", "vhd", { "select-prev-chord", "action://delete" });
+    expectDispatch("visual v w x", "vwx", { "select-next-measure", "action://delete" });
+
+    // EDIT that mutates/deletes -> run last (dispatch asserted; executes only with focus)
+    expectDispatch("copy y", "y", { "action://copy" });
+    expectDispatch("paste p", "p", { "action://paste" });
+    expectDispatch("undo u", "u", { "action://undo" });
+    expectDispatch("delete x", "x", { "action://delete" });
+    expectDispatch("delete dd", "dd", { "time-delete" });
+
+    // ===== verdict =====
+    m_recording = false;
+    m_inSelfTest = false;
+    const int total = pass + fail;
+    for (const QString& f : failures) {
+        LOGI() << "VimController SELFTEST:   " << f.toStdString();
+    }
+    LOGI() << "VIMSELFTEST: " << (fail == 0 ? "PASS" : "FAIL")
+           << " (" << pass << "/" << total << " cases)"; // grep marker for the e2e runner
     LOGI() << "VimController SELFTEST: end";
 }
 
@@ -332,7 +465,10 @@ bool VimController::feedEngine(const context::RawKeyEvent& e, QStringList& outCm
 
     const QString help = out.value("help").toString();
     if (!help.isEmpty()) {
-        showHelp(help);
+        m_helpRequested = true;         // observed by the self-test
+        if (!m_inSelfTest) {
+            showHelp(help);             // suppress the live dialog during the automated run
+        }
     }
     return consumed;
 }
@@ -363,6 +499,9 @@ void VimController::publishStatus(const QString& mode, const QString& pending)
 
 void VimController::dispatchCode(const std::string& code, int times)
 {
+    if (m_recording) {
+        m_dispatched << QString::fromStdString(code); // self-test: capture the dispatch
+    }
     for (int i = 0; i < times && i < 1000; ++i) {
         dispatcher()->dispatch(code);
     }
