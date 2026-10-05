@@ -346,12 +346,21 @@ void VimController::runSelfTest()
     expectDispatch("visual v h d", "vhd", { "select-prev-chord", "action://delete" });
     expectDispatch("visual v w x", "vwx", { "select-next-measure", "action://delete" });
 
-    // EDIT that mutates/deletes -> run last (dispatch asserted; executes only with focus)
-    expectDispatch("copy y", "y", { "action://copy" });
+    // EDIT + OPERATORS -> run last (dispatch asserted; executes only with focus).
     expectDispatch("paste p", "p", { "action://paste" });
     expectDispatch("undo u", "u", { "action://undo" });
     expectDispatch("delete x", "x", { "action://delete" });
-    expectDispatch("delete dd", "dd", { "time-delete" });
+
+    // vim operators d/y/c {count}{motion}: extend-selection ops, then the action.
+    expectDispatch("op yl (copy 1)", "yl", { "action://copy" });
+    expectDispatch("op d2l", "d2l", { "select-next-chord", "action://delete" });
+    expectDispatch("op y$", "y$", { "select-end-line", "action://copy" });
+    expectDispatch("op dG", "dG", { "select-end-score", "action://delete" });
+    expectDispatch("op dgg", "dgg", { "select-begin-score", "action://delete" });
+    expectDispatch("op dd (measure)", "dd", { "time-delete" });
+    expectDispatch("op yy (measure)", "yy", { "select-begin-line", "select-end-line", "action://copy" });
+    // 'c' enters INSERT -> keep LAST (the next case's leading Esc would toggle note-input).
+    expectDispatch("op c2l", "c2l", { "select-next-chord", "action://delete", "note-input" });
 
     // ===== verdict =====
     m_recording = false;
