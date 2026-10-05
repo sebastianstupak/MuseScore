@@ -557,6 +557,17 @@ public:
     Q_INVOKABLE apiv1::EngravingItem* hitElementAt(qreal x, qreal y, float width = 0.0f);
     /// All elements at a score(logical) point, within \p width (logical units).
     Q_INVOKABLE QQmlListProperty<apiv1::EngravingItem> hitElementsAt(qreal x, qreal y, float width);
+
+    // T2 — editing wraps for stylus/pointer plugins. Coordinates are SCORE
+    // (logical); convert from screen with mapToScore() first. Each is a thin wrap
+    // over the notation interaction and runs synchronously on the current score.
+    /// Add a note at a score point (click-to-add). \p replace overwrites the note
+    /// at that position; \p insert inserts rather than overwriting.
+    Q_INVOKABLE void putNote(qreal x, qreal y, bool replace = false, bool insert = false);
+    /// Select an element; \p add extends the current selection instead of replacing.
+    Q_INVOKABLE void selectElement(apiv1::EngravingItem* element, bool add = false);
+    /// Delete the current selection.
+    Q_INVOKABLE void deleteSelection();
     /// \endcond
 
     Q_INVOKABLE void log(const QString&);

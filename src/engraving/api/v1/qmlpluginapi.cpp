@@ -37,7 +37,10 @@
 #include "notation/inotation.h"
 #include "notation/inotationelements.h" // IWYU pragma: keep
 #include "notation/inotationinteraction.h"
+#include "notation/inotationnoteinput.h"
 #include "notation/inotationviewstate.h"
+
+#include "engraving/dom/mscore.h" // SelectType
 
 // api
 #include "engravingapiv1.h"
@@ -590,6 +593,38 @@ QQmlListProperty<apiv1::EngravingItem> PluginAPI::hitElementsAt(qreal x, qreal y
     }
 
     return wrapContainerProperty<apiv1::EngravingItem>(this, hitList);
+}
+
+void PluginAPI::putNote(qreal x, qreal y, bool replace, bool insert)
+{
+    notation::INotationPtr notation = context()->currentNotation();
+    if (!notation) {
+        return;
+    }
+    notation->interaction()->noteInput()->putNote(muse::PointF(x, y), replace, insert);
+}
+
+void PluginAPI::selectElement(apiv1::EngravingItem* element, bool add)
+{
+    notation::INotationPtr notation = context()->currentNotation();
+    if (!notation || !element) {
+        return;
+    }
+    mu::engraving::EngravingItem* item = element->element();
+    if (!item) {
+        return;
+    }
+    const mu::engraving::SelectType type = add ? mu::engraving::SelectType::ADD : mu::engraving::SelectType::REPLACE;
+    notation->interaction()->select({ item }, type);
+}
+
+void PluginAPI::deleteSelection()
+{
+    notation::INotationPtr notation = context()->currentNotation();
+    if (!notation) {
+        return;
+    }
+    notation->interaction()->deleteSelection();
 }
 
 QString PluginAPI::pluginType() const
