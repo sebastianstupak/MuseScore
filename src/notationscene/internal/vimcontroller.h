@@ -73,6 +73,10 @@ private:
     // directly (like moveChordNote).
     void moveToMeasureEdge(bool toEnd);
 
+    // {n}G / {n}gg — jump the selection to the first chord-rest of measure n
+    // (1-based), driving selection directly (no native goto-measure action).
+    void gotoMeasure(int number);
+
     // chord-build:<csv-offsets> — add tones (semitone offsets from the
     // selected note's pitch) to the selected note's chord via the engraving
     // NoteInput API, wrapped in a single undoable transaction.

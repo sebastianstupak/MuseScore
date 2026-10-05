@@ -44,6 +44,7 @@
 #include "notation/inotationelements.h"
 #include "engraving/dom/note.h"
 #include "engraving/dom/chord.h"
+#include "engraving/dom/measure.h"
 #include "engraving/dom/segment.h"
 #include "engraving/dom/score.h"
 #include "engraving/dom/mscore.h"
@@ -306,6 +307,21 @@ void VimController::runSelfTest()
               QString("$ note=%1, 0 pitch=%2 (want %3)").arg(endIsNote).arg(p0).arg(P));
     }
 
+    // {n}G jumps to measure n: `3G` must land a note in the 3rd measure.
+    {
+        injOne('\x1b');
+        reselect();
+        Score* score = notation->elements() ? notation->elements()->msScore() : nullptr;
+        Measure* m3 = score ? score->firstMeasure() : nullptr;
+        for (int i = 1; i < 3 && m3; ++i) {
+            m3 = m3->nextMeasure();
+        }
+        inject("3G");
+        EngravingItem* sel = notation->interaction()->selection()->element();
+        const bool ok = sel && sel->isNote() && (!m3 || sel->findMeasure() == m3);
+        check("3G goto measure 3", ok, QString("landed on a note in measure 3 (m3 exists=%1)").arg(m3 != nullptr));
+    }
+
     // HELP: ? and ,? make the engine return the cheatsheet (observed via the flag).
     {
         injOne('\x1b');
@@ -389,6 +405,8 @@ void VimController::runSelfTest()
     expectDispatch("op y$", "y$", { "select-end-line", "action://copy" });
     expectDispatch("op dG", "dG", { "select-end-score", "action://delete" });
     expectDispatch("op dgg", "dgg", { "select-begin-score", "action://delete" });
+    expectDispatch("op dj (staff)", "dj", { "select-staff-below", "action://delete" });
+    expectDispatch("op y2k (staff)", "y2k", { "select-staff-above", "select-staff-above", "action://copy" });
     expectDispatch("op dd (measure)", "dd", { "time-delete" });
     expectDispatch("op yy (measure)", "yy", { "select-begin-line", "select-end-line", "action://copy" });
     // 'c' enters INSERT -> keep LAST (the next case's leading Esc would toggle note-input).
@@ -680,6 +698,59 @@ void VimController::moveToMeasureEdge(bool toEnd)
            << " -> track " << found->track();
 }
 
+void VimController::gotoMeasure(int number)
+{
+    using namespace mu::engraving;
+    if (number < 1) {
+        number = 1;
+    }
+    auto notation = globalContext()->currentNotation();
+    if (!notation) {
+        return;
+    }
+    auto interaction = notation->interaction();
+    if (!interaction) {
+        return;
+    }
+    Score* score = notation->elements() ? notation->elements()->msScore() : nullptr;
+    if (!score) {
+        return;
+    }
+    Measure* m = score->firstMeasure();
+    for (int i = 1; i < number && m; ++i) {
+        m = m->nextMeasure();
+    }
+    if (!m) {
+        return; // past the end of the score
+    }
+    // Prefer the current selection's track; fall back to the first non-empty track.
+    track_idx_t track = 0;
+    if (EngravingItem* sel = interaction->selection()->element()) {
+        track = sel->track();
+    }
+    EngravingItem* found = nullptr;
+    for (Segment* s = m->first(SegmentType::ChordRest); s && s->measure() == m && !found;
+         s = s->next1(SegmentType::ChordRest)) {
+        found = s->element(track);
+    }
+    if (!found) {
+        for (Segment* s = m->first(SegmentType::ChordRest); s && s->measure() == m && !found;
+             s = s->next1(SegmentType::ChordRest)) {
+            for (track_idx_t t = 0; t < score->ntracks() && !found; ++t) {
+                found = s->element(t);
+            }
+        }
+    }
+    if (!found) {
+        return;
+    }
+    if (found->isChord()) {
+        found = toChord(found)->downNote();
+    }
+    interaction->select({ found }, SelectType::SINGLE);
+    LOGI() << "VimController: goto measure " << number << " -> track " << found->track();
+}
+
 void VimController::buildChordOnSelection(const QString& offsetsCsv)
 {
     using namespace mu::engraving;
@@ -763,6 +834,10 @@ void VimController::applyOps(const QStringList& cmds)
                 moveToMeasureEdge(false);
             } else if (target == "measure-end") {
                 moveToMeasureEdge(true); // $: last chord/rest of the measure
+            } else if (target == "goto-measure") {
+                // {n}G / {n}gg -> jump to measure n (1-based). The op is
+                // "move:goto-measure:<n>:<count>"; the measure number is value(2).
+                gotoMeasure(parts.value(2).toInt());
             } else {
                 LOGW() << "VimController: unmapped move target " << target.toStdString();
             }
