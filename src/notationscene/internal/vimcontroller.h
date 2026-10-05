@@ -28,6 +28,7 @@
 
 #include "modularity/ioc.h"
 #include "actions/iactionsdispatcher.h"
+#include "interactive/iinteractive.h"
 #include "context/iglobalcontext.h"
 #include "context/iinputinterceptor.h"
 #include "context/ivimstatus.h"
@@ -45,6 +46,7 @@ class VimController : public muse::Contextable
     muse::ContextInject<context::IGlobalContext> globalContext = { this };
     muse::GlobalInject<context::IInputInterceptor> interceptor;
     muse::GlobalInject<context::IVimStatus> vimStatus;
+    muse::ContextInject<muse::IInteractive> interactive = { this };
 
 public:
     explicit VimController(const muse::modularity::ContextPtr& iocCtx);
@@ -56,6 +58,7 @@ private:
     bool onKey(const context::RawKeyEvent& e, bool shortcutOverridePhase);
     bool feedEngine(const context::RawKeyEvent& e, QStringList& outCmds);
     void publishStatus(const QString& mode, const QString& pending);
+    void showHelp(const QString& text);
     void applyOps(const QStringList& cmds);
     void dispatchCode(const std::string& code, int times = 1);
 

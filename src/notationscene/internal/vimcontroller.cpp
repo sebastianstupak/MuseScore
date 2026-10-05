@@ -322,10 +322,28 @@ bool VimController::feedEngine(const context::RawKeyEvent& e, QStringList& outCm
     const bool consumed = out.value("consumed").toBool();
     const QJsonArray arr = out.value("cmds").toArray();
     for (const QJsonValue& v : arr) {
-        outCmds << v.toString();
+        const QString c = v.toString();
+        if (c == "help") {
+            continue; // handled via the reply's `help` text below, not applyOps
+        }
+        outCmds << c;
     }
     publishStatus(out.value("mode").toString(), out.value("pending").toString());
+
+    const QString help = out.value("help").toString();
+    if (!help.isEmpty()) {
+        showHelp(help);
+    }
     return consumed;
+}
+
+void VimController::showHelp(const QString& text)
+{
+    // Defer out of the key-event filter (don't open a dialog re-entrantly), then
+    // show the engine-provided cheatsheet in a non-blocking info dialog.
+    QTimer::singleShot(0, [this, text]() {
+        interactive()->info("motus — Vim mode", text.toStdString());
+    });
 }
 
 void VimController::publishStatus(const QString& mode, const QString& pending)
