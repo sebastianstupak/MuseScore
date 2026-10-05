@@ -35,6 +35,9 @@
 #include <QJsonObject>
 #include <QJsonArray>
 
+#include "global/types/uri.h"
+#include "global/types/val.h"
+
 #include "notation/inotation.h"
 #include "notation/inotationinteraction.h"
 #include "notation/inotationselection.h"
@@ -514,9 +517,12 @@ bool VimController::feedEngine(const context::RawKeyEvent& e, QStringList& outCm
 void VimController::showHelp(const QString& text)
 {
     // Defer out of the key-event filter (don't open a dialog re-entrantly), then
-    // show the engine-provided cheatsheet in a non-blocking info dialog.
+    // show the engine-provided cheatsheet in a scrollable QML dialog
+    // (musescore://notation/vimhelp), passing the text as the `helpText` param.
     QTimer::singleShot(0, [this, text]() {
-        interactive()->info("motus — Vim mode", text.toStdString());
+        muse::UriQuery uri("musescore://notation/vimhelp");
+        uri.addParam("helpText", muse::Val(text.toStdString()));
+        interactive()->open(uri);
     });
 }
 

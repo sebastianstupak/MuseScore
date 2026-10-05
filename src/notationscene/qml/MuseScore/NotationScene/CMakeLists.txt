@@ -244,6 +244,7 @@ qt_add_qml_module(notationscene_qml
         TempoView.qml
         Timeline.qml
         UndoHistoryPanel.qml
+        VimHelpDialog.qml
         UndoRedoToolBar.qml
         ViewModeControl.qml
         ZoomControl.qml
