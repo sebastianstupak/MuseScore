@@ -40,6 +40,7 @@
 
 #include "notation/inotation.h"
 #include "notation/inotationinteraction.h"
+#include "notation/inotationnoteinput.h"
 #include "notation/inotationselection.h"
 #include "notation/inotationelements.h"
 #include "engraving/dom/note.h"
@@ -49,6 +50,9 @@
 #include "engraving/dom/score.h"
 #include "engraving/dom/mscore.h"
 #include "engraving/dom/noteval.h"
+#include "engraving/dom/factory.h"      // self-test: build Accidental/Clef for applyPaletteElement
+#include "engraving/dom/accidental.h"   // self-test: AccidentalType + Note::accidental()
+#include "engraving/dom/clef.h"         // self-test: ClefType / ClefTypeList
 #include "engraving/editing/noteinput.h"
 #include "engraving/editing/transaction/transaction.h"
 
@@ -438,6 +442,87 @@ void VimController::runSelfTest()
     expectDispatch("op yy (measure)", "yy", { "select-begin-line", "select-end-line", "action://copy" });
     // 'c' enters INSERT -> keep LAST (the next case's leading Esc would toggle note-input).
     expectDispatch("op c2l", "c2l", { "select-next-chord", "action://delete", "note-input" });
+
+    // ===== STYLUS T2 APPLY SEMANTICS =====
+    // These exercise the exact engraving operations that the stylus plugin's T2
+    // wraps (PluginAPI::dropSingle / putRest, on the plugin-api branch) delegate
+    // to, so the recognize->apply loop is verified live, not just compiled.
+    // OUTCOME-style: direct interaction calls that run headless.
+    {
+        injOne('\x1b');
+        reselect();
+        Note* note = findFirstNote();
+        Score* score = notation->elements() ? notation->elements()->msScore() : nullptr;
+        bool applied = false, hasSharp = false;
+        if (note && score) {
+            notation->interaction()->select({ note }, SelectType::SINGLE);
+            auto acc = Factory::makeAccidental(score->dummy());
+            acc->setAccidentalType(AccidentalType::SHARP);
+            applied = notation->interaction()->applyPaletteElement(acc.get(), {});
+            if (Note* n2 = findFirstNote()) {
+                hasSharp = n2->accidental() && n2->accidental()->accidentalType() == AccidentalType::SHARP;
+            }
+        }
+        check("T2 dropSingle: accidental applies to note", applied && hasSharp,
+              QString("applied=%1 hasSharp=%2").arg(applied).arg(hasSharp));
+    }
+    {
+        injOne('\x1b');
+        reselect();
+        Note* note = findFirstNote();
+        Score* score = notation->elements() ? notation->elements()->msScore() : nullptr;
+        bool appliedClef = false;
+        if (note && score) {
+            notation->interaction()->select({ note }, SelectType::SINGLE);
+            auto clef = Factory::makeClef(score->dummy()->segment());
+            clef->setClefType(ClefTypeList(ClefType::F, ClefType::F));
+            appliedClef = notation->interaction()->applyPaletteElement(clef.get(), {});
+        }
+        check("T2 dropSingle: clef applies", appliedClef,
+              QString("applied=%1").arg(appliedClef));
+    }
+    {
+        auto countRests = [&]() -> int {
+            int n = 0;
+            Score* sc = notation->elements() ? notation->elements()->msScore() : nullptr;
+            for (Segment* s = sc ? sc->firstSegment(SegmentType::ChordRest) : nullptr;
+                 s; s = s->next1(SegmentType::ChordRest)) {
+                for (track_idx_t t = 0; t < sc->ntracks(); ++t) {
+                    EngravingItem* e = s->element(t);
+                    if (e && e->isRest()) {
+                        ++n;
+                    }
+                }
+            }
+            return n;
+        };
+        injOne('\x1b');
+        reselect();
+        Note* note = findFirstNote();
+        const int before = countRests();
+        bool ran = false;
+        if (note) {
+            auto noteInput = notation->interaction()->noteInput();
+            if (noteInput) {
+                const muse::PointF pos = note->canvasBoundingRect().center();
+                const bool wasActive = noteInput->isNoteInputMode();
+                if (!wasActive) {
+                    noteInput->startNoteInput();
+                }
+                noteInput->setDuration(DurationType::V_QUARTER);
+                noteInput->setRestMode(true);
+                noteInput->putNote(pos, false, false);
+                noteInput->setRestMode(false);
+                if (!wasActive) {
+                    noteInput->endNoteInput();
+                }
+                ran = true;
+            }
+        }
+        const int after = countRests();
+        check("T2 putRest: rest inserted at position", ran && after > before,
+              QString("rests %1 -> %2").arg(before).arg(after));
+    }
 
     // ===== verdict =====
     m_recording = false;
