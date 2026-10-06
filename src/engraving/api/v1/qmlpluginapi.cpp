@@ -1005,6 +1005,10 @@ bool PluginAPI::applyArticulation(const QString& kind, qreal x, qreal y)
         sym = mu::engraving::SymId::articMarcatoAbove;
     } else if (kind == "fermata") {
         sym = mu::engraving::SymId::fermataAbove;
+    } else if (kind == "up_bow") {
+        sym = mu::engraving::SymId::stringsUpBow;
+    } else if (kind == "down_bow") {
+        sym = mu::engraving::SymId::stringsDownBow;
     } else {
         return false;
     }
