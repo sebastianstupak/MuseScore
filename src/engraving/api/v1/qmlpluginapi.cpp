@@ -50,6 +50,7 @@
 #include "engraving/dom/slur.h"         // T2: Slur (applySpan legato)
 #include "engraving/dom/hairpin.h"      // T2: Hairpin / HairpinType (applySpan cresc/dim)
 #include "engraving/dom/pedal.h"        // T2: Pedal (applySpan pedal)
+#include "engraving/dom/glissando.h"    // T2: Glissando (applySpan glissando)
 #include "engraving/dom/articulation.h" // T2: Articulation (applyArticulation)
 #include "engraving/dom/chord.h"        // T2: dummy()->chord() parent for makeArticulation
 #include "engraving/types/symid.h"      // T2: SymId (articulation glyphs)
@@ -822,6 +823,8 @@ bool PluginAPI::applySpan(const QString& kind, qreal x1, qreal y1, qreal x2, qre
         built = h;
     } else if (kind == "pedal") {
         built = std::shared_ptr<mu::engraving::EngravingItem>(mu::engraving::Factory::createPedal(score->dummy()));
+    } else if (kind == "glissando") {
+        built = mu::engraving::Factory::makeGlissando(score->dummy());
     } else {
         return false;
     }
