@@ -138,6 +138,14 @@ private:
 
     mu::engraving::Score* currentNotationScore() const;
 
+    // Env-gated ($MUSE_STYLUS_SELFTEST) in-GUI apply e2e: drive the real stylus T2
+    // plugin-API methods at actual note positions and assert each marking landed on
+    // the CORRECT note, then save the score ($MUSE_STYLUS_SELFTEST_OUT) for PNG
+    // export. Zero impact when the env var is unset.
+    void runStylusSelfTest();
+    bool m_stylusSelfTestDone = false;
+    int m_stylusSelfTestTries = 0;
+
     void toggleNoteInput(NoteInputMethod method);
     void toggleNoteInputInsert();
 

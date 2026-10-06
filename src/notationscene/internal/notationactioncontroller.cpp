@@ -36,6 +36,18 @@
 #include "engraving/dom/sig.h"
 #include "engraving/editing/noteinput.h"
 
+// Stylus apply self-test ($MUSE_STYLUS_SELFTEST) — drive the real T2 plugin-API.
+#include <QTimer>
+#include "engraving/dom/segment.h"
+#include "engraving/dom/measure.h"
+#include "engraving/dom/articulation.h"
+#include "engraving/dom/arpeggio.h"
+#include "engraving/dom/spanner.h"
+#include "engraving/types/symid.h"
+#include "engraving/api/v1/qmlpluginapi.h"
+#include "project/inotationproject.h"
+#include "project/types/projecttypes.h"
+
 #include "notation/imasternotation.h"
 #include "notation/inotation.h"
 #include "notation/inotationautomation.h" // IWYU pragma: keep
@@ -1146,6 +1158,126 @@ void NotationActionController::init()
     globalContext()->playbackState()->playbackStatusChanged().onReceive(this, [this](muse::audio::PlaybackStatus) {
         m_isNoteInputAllowedChanged.send(isNoteInputAllowed());
     }, Asyncable::Mode::SetReplace);
+
+    // Env-gated in-GUI apply e2e. Poll (independent of any change signal) until a
+    // score is open and laid out, then drive the plugin-API at note positions.
+    if (qEnvironmentVariableIsSet("MUSE_STYLUS_SELFTEST")) {
+        LOGI() << "STYLUSSELFTEST: armed (polling for a ready score)";
+        QTimer::singleShot(3000, [this]() { runStylusSelfTest(); });
+    }
+}
+
+void NotationActionController::runStylusSelfTest()
+{
+    if (m_stylusSelfTestDone) {
+        return;
+    }
+    const auto retry = [this]() {
+        if (m_stylusSelfTestTries < 40) {
+            QTimer::singleShot(2000, [this]() { runStylusSelfTest(); });
+        } else {
+            LOGI() << "STYLUSSELFTEST: gave up after " << m_stylusSelfTestTries << " tries (no ready score)";
+        }
+    };
+    ++m_stylusSelfTestTries;
+
+    INotationInteractionPtr interaction = currentNotationInteraction();
+    mu::engraving::Score* score = currentNotationScore();
+    if (!interaction || !score) {
+        LOGI() << "STYLUSSELFTEST: waiting, try " << m_stylusSelfTestTries
+               << " (interaction=" << (interaction != nullptr) << ", score=" << (score != nullptr) << ")";
+        retry();
+        return;
+    }
+
+    // Collect the first few top-notes by walking ChordRest segments.
+    std::vector<mu::engraving::Note*> notes;
+    for (mu::engraving::Measure* m = score->firstMeasure(); m && notes.size() < 6; m = m->nextMeasure()) {
+        for (mu::engraving::Segment* s = m->first(mu::engraving::SegmentType::ChordRest); s;
+             s = s->next(mu::engraving::SegmentType::ChordRest)) {
+            for (mu::engraving::EngravingItem* e : s->elist()) {
+                if (e && e->isChord()) {
+                    mu::engraving::Chord* c = mu::engraving::toChord(e);
+                    if (!c->notes().empty()) {
+                        notes.push_back(c->upNote());
+                    }
+                }
+            }
+        }
+    }
+    if (notes.size() < 3 || notes[0]->canvasBoundingRect().width() <= 0.0) {
+        LOGI() << "STYLUSSELFTEST: waiting, try " << m_stylusSelfTestTries
+               << " (notes=" << notes.size() << ", laid out="
+               << (notes.empty() ? false : notes[0]->canvasBoundingRect().width() > 0.0) << ")";
+        retry();
+        return;
+    }
+    m_stylusSelfTestDone = true;
+    LOGI() << "STYLUSSELFTEST: score ready (" << notes.size() << " notes), applying markings";
+
+    // Drive the REAL stylus T2 methods (same code the plugin calls), at actual note
+    // canvas positions, then assert each marking landed on the CORRECT note.
+    mu::engraving::apiv1::PluginAPI api(iocContext());
+    auto cx = [](mu::engraving::Note* n) { const muse::RectF r = n->canvasBoundingRect(); return r.x() + r.width() / 2.0; };
+    auto cy = [](mu::engraving::Note* n) { const muse::RectF r = n->canvasBoundingRect(); return r.y() + r.height() / 2.0; };
+
+    int pass = 0, total = 0;
+
+    // 1) Accent on notes[0], drawn ABOVE the head — also tests that nearest-note
+    //    snapping resolves the off-head point back to notes[0].
+    {
+        ++total;
+        const double h = notes[0]->canvasBoundingRect().height();
+        api.applyArticulation(QStringLiteral("accent"), cx(notes[0]), cy(notes[0]) - h);
+        bool ok = false;
+        for (mu::engraving::Articulation* a : notes[0]->chord()->articulations()) {
+            if (a->symId() == mu::engraving::SymId::articAccentAbove) {
+                ok = true;
+            }
+        }
+        LOGI() << "STYLUSSELFTEST accent on note0 (snapped from above the head): " << (ok ? "PASS" : "FAIL");
+        pass += ok ? 1 : 0;
+    }
+
+    // 2) Slur from notes[0] to notes[2] — assert a slur STARTS exactly on note0.
+    {
+        ++total;
+        const int t0 = notes[0]->chord()->tick().ticks();
+        const int t2 = notes[2]->chord()->tick().ticks();
+        api.applySpan(QStringLiteral("slur"), cx(notes[0]), cy(notes[0]), cx(notes[2]), cy(notes[2]));
+        bool ok = false;
+        int gotTick = -1, gotTick2 = -1;
+        for (const auto& kv : score->spanner()) {
+            mu::engraving::Spanner* sp = kv.second;
+            if (sp->isSlur() && sp->tick().ticks() == t0) {
+                ok = true;
+                gotTick = sp->tick().ticks();
+                gotTick2 = sp->tick2().ticks();
+            }
+        }
+        LOGI() << "STYLUSSELFTEST slur note0->note2 (want start tick " << t0 << ", note2 tick " << t2
+               << "; got " << gotTick << ".." << gotTick2 << "): " << (ok ? "PASS" : "FAIL");
+        pass += ok ? 1 : 0;
+    }
+
+    // 3) Arpeggio on notes[0]'s chord — assert that exact chord now has an arpeggio.
+    {
+        ++total;
+        api.applyArpeggio(cx(notes[0]), cy(notes[0]));
+        const bool ok = notes[0]->chord()->arpeggio() != nullptr;
+        LOGI() << "STYLUSSELFTEST arpeggio on note0 chord: " << (ok ? "PASS" : "FAIL");
+        pass += ok ? 1 : 0;
+    }
+
+    LOGI() << "STYLUSSELFTEST: " << pass << "/" << total << " cases passed";
+
+    // Save the modified score so it can be rendered to PNG for visual inspection.
+    const QByteArray out = qgetenv("MUSE_STYLUS_SELFTEST_OUT");
+    if (!out.isEmpty() && globalContext()->currentProject()) {
+        const muse::Ret ret = globalContext()->currentProject()->save(
+            muse::io::path_t(QString::fromUtf8(out)), project::SaveMode::SaveCopy);
+        LOGI() << "STYLUSSELFTEST saved score to " << out.constData() << ": " << (ret ? "OK" : "FAIL");
+    }
 }
 
 void NotationActionController::setViewController(INotationViewController* controller)
