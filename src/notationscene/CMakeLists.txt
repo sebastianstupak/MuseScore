@@ -60,6 +60,7 @@ add_subdirectory(widgets)
 
 target_link_libraries(notationscene PRIVATE
     notation
+    iex_imagesexport   # stylus apply self-test: render the in-memory score to PNG
     muse::ui
     Qt::Quick
     Qt::Widgets

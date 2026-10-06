@@ -48,6 +48,9 @@
 #include "engraving/api/v1/qmlpluginapi.h"
 #include "project/inotationproject.h"
 #include "project/types/projecttypes.h"
+#include "global/io/buffer.h"
+#include "global/types/val.h"
+#include "importexport/imagesexport/internal/pngwriter.h"
 
 #include "notation/imasternotation.h"
 #include "notation/inotation.h"
@@ -1239,9 +1242,11 @@ void NotationActionController::runStylusSelfTest()
     mu::engraving::apiv1::PluginAPI api(iocContext());
     auto cx = [](mu::engraving::Note* n) { const muse::RectF r = n->canvasBoundingRect(); return r.x() + r.width() / 2.0; };
     auto cy = [](mu::engraving::Note* n) { const muse::RectF r = n->canvasBoundingRect(); return r.y() + r.height() / 2.0; };
-    auto hasArtic = [](mu::engraving::Note* n, mu::engraving::SymId sym) {
+    // Accept either placement — layout flips an articulation Above<->Below depending
+    // on stem direction (e.g. an accent on a stem-up chord renders Below).
+    auto hasArtic = [](mu::engraving::Note* n, mu::engraving::SymId above, mu::engraving::SymId below) {
         for (mu::engraving::Articulation* a : n->chord()->articulations()) {
-            if (a->symId() == sym) {
+            if (a->symId() == above || a->symId() == below) {
                 return true;
             }
         }
@@ -1258,13 +1263,13 @@ void NotationActionController::runStylusSelfTest()
     // Accent on note0, tenuto on note1, trill on note2 — applied at each notehead;
     // assert the mark landed on THAT note's chord (correct location).
     api.applyArticulation(QStringLiteral("accent"), cx(notes[0]), cy(notes[0]));
-    check("accent on note0", hasArtic(notes[0], mu::engraving::SymId::articAccentAbove));
+    check("accent on note0", hasArtic(notes[0], mu::engraving::SymId::articAccentAbove, mu::engraving::SymId::articAccentBelow));
 
     api.applyArticulation(QStringLiteral("tenuto"), cx(notes[1]), cy(notes[1]));
-    check("tenuto on note1", hasArtic(notes[1], mu::engraving::SymId::articTenutoAbove));
+    check("tenuto on note1", hasArtic(notes[1], mu::engraving::SymId::articTenutoAbove, mu::engraving::SymId::articTenutoBelow));
 
     api.applyArticulation(QStringLiteral("trill"), cx(notes[2]), cy(notes[2]));
-    check("trill on note2", hasArtic(notes[2], mu::engraving::SymId::ornamentTrill));
+    check("trill on note2", hasArtic(notes[2], mu::engraving::SymId::ornamentTrill, mu::engraving::SymId::ornamentTrill));
 
     // Arpeggio on note0's chord.
     api.applyArpeggio(cx(notes[0]), cy(notes[0]));
@@ -1274,7 +1279,7 @@ void NotationActionController::runStylusSelfTest()
     {
         const double h = notes[3]->canvasBoundingRect().height();
         api.applyArticulation(QStringLiteral("staccato"), cx(notes[3]), cy(notes[3]) - h);
-        check("staccato snapped from above note3", hasArtic(notes[3], mu::engraving::SymId::articStaccatoAbove));
+        check("staccato snapped from above note3", hasArtic(notes[3], mu::engraving::SymId::articStaccatoAbove, mu::engraving::SymId::articStaccatoBelow));
     }
 
     // Slur note0 -> note3 — assert a slur starts on note0's tick.
@@ -1305,6 +1310,27 @@ void NotationActionController::runStylusSelfTest()
                    << " (" << ret.toString() << ")";
         } else {
             LOGI() << "STYLUSSELFTEST could not open " << out.constData();
+        }
+    }
+
+    // Render the in-memory score straight to PNG (the converter path, but on our
+    // live modified notation — avoids the save/re-open round-trip that breaks for
+    // old-format scores) so the applied markings can be inspected visually.
+    const QByteArray png = qgetenv("MUSE_STYLUS_SELFTEST_PNG");
+    if (!png.isEmpty()) {
+        mu::iex::imagesexport::PngWriter writer;
+        auto buf = muse::io::Buffer::opened(muse::io::IODevice::WriteOnly);
+        const project::INotationWriter::Options opts {
+            { project::INotationWriter::OptionKey::PAGE_NUMBER, muse::Val(0) },
+        };
+        buf.setMeta("file_path", QString::fromUtf8(png).toStdString());
+        const muse::Ret ret = writer.write(currentNotation(), buf, opts);
+        buf.close();
+        if (ret) {
+            muse::io::File::writeFile(muse::io::path_t(QString::fromUtf8(png)), buf.data());
+            LOGI() << "STYLUSSELFTEST rendered PNG to " << png.constData();
+        } else {
+            LOGI() << "STYLUSSELFTEST PNG render FAILED: " << ret.toString();
         }
     }
 }
