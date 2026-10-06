@@ -38,6 +38,7 @@
 
 // Stylus apply self-test ($MUSE_STYLUS_SELFTEST) — drive the real T2 plugin-API.
 #include <QTimer>
+#include <QFile>
 #include "engraving/dom/segment.h"
 #include "engraving/dom/measure.h"
 #include "engraving/dom/articulation.h"
@@ -1181,6 +1182,24 @@ void NotationActionController::runStylusSelfTest()
     };
     ++m_stylusSelfTestTries;
 
+    // A headless, software-rendered launch never brings a command-line score to
+    // "current notation" (setCurrentProject fires on UI tab activation, which has no
+    // window here). So load the score ourselves and set it current — this is also the
+    // most deterministic way to drive the apply test.
+    if (!m_stylusSelfTestLoaded && !currentNotationScore()) {
+        m_stylusSelfTestLoaded = true;
+        const QByteArray sp = qgetenv("MUSE_STYLUS_SELFTEST_SCORE");
+        if (!sp.isEmpty()) {
+            project::INotationProjectPtr prj = projectCreator()->newProject(iocContext());
+            if (prj && prj->load(muse::io::path_t(QString::fromUtf8(sp)))) {
+                globalContext()->setCurrentProject(prj);
+                LOGI() << "STYLUSSELFTEST: loaded " << sp.constData() << " directly and set current";
+            } else {
+                LOGI() << "STYLUSSELFTEST: direct load FAILED for " << sp.constData();
+            }
+        }
+    }
+
     INotationInteractionPtr interaction = currentNotationInteraction();
     mu::engraving::Score* score = currentNotationScore();
     if (!interaction || !score) {
@@ -1205,7 +1224,7 @@ void NotationActionController::runStylusSelfTest()
             }
         }
     }
-    if (notes.size() < 3 || notes[0]->canvasBoundingRect().width() <= 0.0) {
+    if (notes.size() < 4 || notes[0]->canvasBoundingRect().width() <= 0.0) {
         LOGI() << "STYLUSSELFTEST: waiting, try " << m_stylusSelfTestTries
                << " (notes=" << notes.size() << ", laid out="
                << (notes.empty() ? false : notes[0]->canvasBoundingRect().width() > 0.0) << ")";
@@ -1216,67 +1235,77 @@ void NotationActionController::runStylusSelfTest()
     LOGI() << "STYLUSSELFTEST: score ready (" << notes.size() << " notes), applying markings";
 
     // Drive the REAL stylus T2 methods (same code the plugin calls), at actual note
-    // canvas positions, then assert each marking landed on the CORRECT note.
+    // canvas positions, and assert each marking landed on the CORRECT note.
     mu::engraving::apiv1::PluginAPI api(iocContext());
     auto cx = [](mu::engraving::Note* n) { const muse::RectF r = n->canvasBoundingRect(); return r.x() + r.width() / 2.0; };
     auto cy = [](mu::engraving::Note* n) { const muse::RectF r = n->canvasBoundingRect(); return r.y() + r.height() / 2.0; };
+    auto hasArtic = [](mu::engraving::Note* n, mu::engraving::SymId sym) {
+        for (mu::engraving::Articulation* a : n->chord()->articulations()) {
+            if (a->symId() == sym) {
+                return true;
+            }
+        }
+        return false;
+    };
 
     int pass = 0, total = 0;
-
-    // 1) Accent on notes[0], drawn ABOVE the head — also tests that nearest-note
-    //    snapping resolves the off-head point back to notes[0].
-    {
+    const auto check = [&](const char* name, bool ok) {
         ++total;
-        const double h = notes[0]->canvasBoundingRect().height();
-        api.applyArticulation(QStringLiteral("accent"), cx(notes[0]), cy(notes[0]) - h);
-        bool ok = false;
-        for (mu::engraving::Articulation* a : notes[0]->chord()->articulations()) {
-            if (a->symId() == mu::engraving::SymId::articAccentAbove) {
-                ok = true;
-            }
-        }
-        LOGI() << "STYLUSSELFTEST accent on note0 (snapped from above the head): " << (ok ? "PASS" : "FAIL");
         pass += ok ? 1 : 0;
+        LOGI() << "STYLUSSELFTEST " << name << ": " << (ok ? "PASS" : "FAIL");
+    };
+
+    // Accent on note0, tenuto on note1, trill on note2 — applied at each notehead;
+    // assert the mark landed on THAT note's chord (correct location).
+    api.applyArticulation(QStringLiteral("accent"), cx(notes[0]), cy(notes[0]));
+    check("accent on note0", hasArtic(notes[0], mu::engraving::SymId::articAccentAbove));
+
+    api.applyArticulation(QStringLiteral("tenuto"), cx(notes[1]), cy(notes[1]));
+    check("tenuto on note1", hasArtic(notes[1], mu::engraving::SymId::articTenutoAbove));
+
+    api.applyArticulation(QStringLiteral("trill"), cx(notes[2]), cy(notes[2]));
+    check("trill on note2", hasArtic(notes[2], mu::engraving::SymId::ornamentTrill));
+
+    // Arpeggio on note0's chord.
+    api.applyArpeggio(cx(notes[0]), cy(notes[0]));
+    check("arpeggio on note0 chord", notes[0]->chord()->arpeggio() != nullptr);
+
+    // Snapping: an accent drawn ABOVE note3's head should still resolve to note3.
+    {
+        const double h = notes[3]->canvasBoundingRect().height();
+        api.applyArticulation(QStringLiteral("staccato"), cx(notes[3]), cy(notes[3]) - h);
+        check("staccato snapped from above note3", hasArtic(notes[3], mu::engraving::SymId::articStaccatoAbove));
     }
 
-    // 2) Slur from notes[0] to notes[2] — assert a slur STARTS exactly on note0.
+    // Slur note0 -> note3 — assert a slur starts on note0's tick.
     {
-        ++total;
         const int t0 = notes[0]->chord()->tick().ticks();
-        const int t2 = notes[2]->chord()->tick().ticks();
-        api.applySpan(QStringLiteral("slur"), cx(notes[0]), cy(notes[0]), cx(notes[2]), cy(notes[2]));
-        bool ok = false;
-        int gotTick = -1, gotTick2 = -1;
+        api.applySpan(QStringLiteral("slur"), cx(notes[0]), cy(notes[0]), cx(notes[3]), cy(notes[3]));
+        int slurCount = 0, firstTick = -1;
         for (const auto& kv : score->spanner()) {
-            mu::engraving::Spanner* sp = kv.second;
-            if (sp->isSlur() && sp->tick().ticks() == t0) {
-                ok = true;
-                gotTick = sp->tick().ticks();
-                gotTick2 = sp->tick2().ticks();
+            if (kv.second->isSlur()) {
+                ++slurCount;
+                firstTick = kv.second->tick().ticks();
             }
         }
-        LOGI() << "STYLUSSELFTEST slur note0->note2 (want start tick " << t0 << ", note2 tick " << t2
-               << "; got " << gotTick << ".." << gotTick2 << "): " << (ok ? "PASS" : "FAIL");
-        pass += ok ? 1 : 0;
-    }
-
-    // 3) Arpeggio on notes[0]'s chord — assert that exact chord now has an arpeggio.
-    {
-        ++total;
-        api.applyArpeggio(cx(notes[0]), cy(notes[0]));
-        const bool ok = notes[0]->chord()->arpeggio() != nullptr;
-        LOGI() << "STYLUSSELFTEST arpeggio on note0 chord: " << (ok ? "PASS" : "FAIL");
-        pass += ok ? 1 : 0;
+        LOGI() << "STYLUSSELFTEST slur diag: " << slurCount << " slur(s), first tick " << firstTick << " (want " << t0 << ")";
+        check("slur starts on note0", slurCount > 0 && firstTick == t0);
     }
 
     LOGI() << "STYLUSSELFTEST: " << pass << "/" << total << " cases passed";
 
-    // Save the modified score so it can be rendered to PNG for visual inspection.
+    // Persist the modified score (writeToDevice is the most direct path) for PNG export.
     const QByteArray out = qgetenv("MUSE_STYLUS_SELFTEST_OUT");
     if (!out.isEmpty() && globalContext()->currentProject()) {
-        const muse::Ret ret = globalContext()->currentProject()->save(
-            muse::io::path_t(QString::fromUtf8(out)), project::SaveMode::SaveCopy);
-        LOGI() << "STYLUSSELFTEST saved score to " << out.constData() << ": " << (ret ? "OK" : "FAIL");
+        QFile f(QString::fromUtf8(out));
+        if (f.open(QIODevice::WriteOnly | QIODevice::Truncate)) {
+            const muse::Ret ret = globalContext()->currentProject()->writeToDevice(&f);
+            f.close();
+            LOGI() << "STYLUSSELFTEST wrote " << out.constData() << ": " << (ret ? "OK" : "FAIL")
+                   << " (" << ret.toString() << ")";
+        } else {
+            LOGI() << "STYLUSSELFTEST could not open " << out.constData();
+        }
     }
 }
 

@@ -36,6 +36,7 @@
 #include "rcommand/icommandsstate.h"
 #include "rcommand/icommanddispatcher.h"
 #include "context/iglobalcontext.h"
+#include "project/iprojectcreator.h" // stylus apply self-test: load a score directly
 #include "context/iuicontextresolver.h"
 #include "playback/iplaybackcontroller.h"
 #include "engraving/iengravingconfiguration.h"
@@ -58,6 +59,7 @@ class NotationActionController : public INotationCommandsController, public muse
     muse::ContextInject<muse::rcommand::ICommandDispatcher> commandDispatcher = { this };
     muse::ContextInject<muse::rcommand::ICommandsState> commandsState = { this };
     muse::ContextInject<context::IGlobalContext> globalContext = { this };
+    muse::GlobalInject<project::IProjectCreator> projectCreator; // stylus apply self-test
     muse::ContextInject<context::IUiContextResolver> uiContextResolver = { this };
     muse::ContextInject<muse::IInteractive> interactive = { this };
     muse::ContextInject<playback::IPlaybackController> playbackController = { this };
@@ -144,6 +146,7 @@ private:
     // export. Zero impact when the env var is unset.
     void runStylusSelfTest();
     bool m_stylusSelfTestDone = false;
+    bool m_stylusSelfTestLoaded = false;
     int m_stylusSelfTestTries = 0;
 
     void toggleNoteInput(NoteInputMethod method);
