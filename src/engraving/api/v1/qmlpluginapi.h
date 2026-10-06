@@ -591,6 +591,9 @@ public:
     /// ("tenuto","accent","staccato","marcato","fermata"). Selects the note under
     /// the point and applies the articulation. Returns true if applied.
     Q_INVOKABLE bool applyArticulation(const QString& kind, qreal x, qreal y);
+    /// Attach an arpeggio (chord roll) at a score point. Snaps to the note under the
+    /// point and applies a normal arpeggio to its chord. Returns true if applied.
+    Q_INVOKABLE bool applyArpeggio(qreal x, qreal y);
     /// \endcond
 
     Q_INVOKABLE void log(const QString&);

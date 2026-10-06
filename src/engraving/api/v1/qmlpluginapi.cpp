@@ -51,6 +51,7 @@
 #include "engraving/dom/hairpin.h"      // T2: Hairpin / HairpinType (applySpan cresc/dim)
 #include "engraving/dom/pedal.h"        // T2: Pedal (applySpan pedal)
 #include "engraving/dom/glissando.h"    // T2: Glissando (applySpan glissando)
+#include "engraving/dom/arpeggio.h"     // T2: Arpeggio (applyArpeggio)
 #include "engraving/dom/articulation.h" // T2: Articulation (applyArticulation)
 #include "engraving/dom/chord.h"        // T2: dummy()->chord() parent for makeArticulation
 #include "engraving/dom/note.h"         // T2: snap span/articulation endpoints to the nearest Note
@@ -889,6 +890,18 @@ bool PluginAPI::applySpan(const QString& kind, qreal x1, qreal y1, qreal x2, qre
     if (!a || !b) {
         return false;
     }
+
+    // A curve between two DIFFERENT notes of the SAME pitch is a tie, not a slur:
+    // that is the only thing that distinguishes the two, and the pen gesture is
+    // identical for both — so we resolve it here, where we know the pitches. Select
+    // the left note and toggle a tie forward onto it.
+    if ((kind == "slur") && a != b && a->pitch() == b->pitch()) {
+        mu::engraving::Note* left = (a->canvasBoundingRect().x() <= b->canvasBoundingRect().x()) ? a : b;
+        interaction->select({ left }, mu::engraving::SelectType::REPLACE);
+        interaction->toggleTieForSelection();
+        return true;
+    }
+
     interaction->select({ a }, mu::engraving::SelectType::REPLACE);
     interaction->select({ b }, mu::engraving::SelectType::RANGE);
 
@@ -949,6 +962,32 @@ bool PluginAPI::applyArticulation(const QString& kind, qreal x, qreal y)
     auto art = mu::engraving::Factory::makeArticulation(score->dummy()->chord());
     art->setSymId(sym);
     return interaction->applyPaletteElement(art.get(), {});
+}
+
+bool PluginAPI::applyArpeggio(qreal x, qreal y)
+{
+    notation::INotationPtr notation = context()->currentNotation();
+    if (!notation) {
+        return false;
+    }
+    mu::engraving::Score* score = notation->elements() ? notation->elements()->msScore() : nullptr;
+    if (!score) {
+        return false;
+    }
+    auto interaction = notation->interaction();
+    const double scaling = notation->viewState()->matrix().m11();
+    const float w = static_cast<float>(3.0 / (scaling != 0.0 ? scaling : 1.0));
+
+    // Snap to the note the user drew beside; the arpeggio attaches to its chord.
+    mu::engraving::Note* note = nearestNoteToPoint(notation, x, y, w);
+    if (!note) {
+        return false;
+    }
+    interaction->select({ note }, mu::engraving::SelectType::REPLACE);
+
+    auto arp = mu::engraving::Factory::makeArpeggio(score->dummy()->chord());
+    arp->setArpeggioType(mu::engraving::ArpeggioType::NORMAL);
+    return interaction->applyPaletteElement(arp.get(), {});
 }
 
 QString PluginAPI::pluginType() const
