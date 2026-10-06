@@ -579,6 +579,10 @@ public:
     /// the point, then applies the built element like a palette double-click.
     /// Returns true if an element was built and applied.
     Q_INVOKABLE bool dropSingle(const QString& element, qreal x, qreal y);
+    /// Place a time signature \p num/\p den at a score point (selects the element
+    /// under the point, then applies the time signature like a palette double-click).
+    /// Returns true if applied.
+    Q_INVOKABLE bool putTimeSig(int num, int den, qreal x, qreal y);
     /// \endcond
 
     Q_INVOKABLE void log(const QString&);

@@ -44,6 +44,9 @@
 #include "engraving/dom/score.h"       // T2: Score::dummy() for element construction
 #include "engraving/dom/accidental.h"  // T2: Accidental / AccidentalType (dropSingle)
 #include "engraving/dom/clef.h"         // T2: Clef / ClefType / ClefTypeList (dropSingle)
+#include "engraving/dom/barline.h"      // T2: BarLine (dropSingle barline)
+#include "engraving/dom/timesig.h"      // T2: TimeSig / TimeSigType (putTimeSig)
+#include "engraving/types/fraction.h"   // T2: Fraction (putTimeSig)
 
 // api
 #include "engravingapiv1.h"
@@ -697,6 +700,16 @@ bool PluginAPI::dropSingle(const QString& element, qreal x, qreal y)
         interaction->select({ hit }, mu::engraving::SelectType::REPLACE);
     }
 
+    // A dot is not a droppable palette element — it toggles an augmentation dot
+    // on the note/input at the point.
+    if (element == "dot") {
+        if (const auto& noteInput = interaction->noteInput()) {
+            noteInput->toggleDots(1);
+            return true;
+        }
+        return false;
+    }
+
     // Build the element palette-style; keep it alive across applyPaletteElement
     // (which clones it, exactly like a palette double-click).
     std::shared_ptr<mu::engraving::EngravingItem> built;
@@ -722,6 +735,8 @@ bool PluginAPI::dropSingle(const QString& element, qreal x, qreal y)
         auto clef = mu::engraving::Factory::makeClef(score->dummy()->segment());
         clef->setClefType(mu::engraving::ClefTypeList(ct, ct));
         built = clef;
+    } else if (element == "barline") {
+        built = mu::engraving::Factory::makeBarLine(score->dummy()->segment()); // default NORMAL
     } else {
         return false;
     }
@@ -730,6 +745,33 @@ bool PluginAPI::dropSingle(const QString& element, qreal x, qreal y)
         return false;
     }
     return interaction->applyPaletteElement(built.get(), {});
+}
+
+bool PluginAPI::putTimeSig(int num, int den, qreal x, qreal y)
+{
+    if (num <= 0 || den <= 0) {
+        return false;
+    }
+    notation::INotationPtr notation = context()->currentNotation();
+    if (!notation) {
+        return false;
+    }
+    mu::engraving::Score* score = notation->elements() ? notation->elements()->msScore() : nullptr;
+    if (!score) {
+        return false;
+    }
+    auto interaction = notation->interaction();
+
+    // Target the measure under the point, then apply the time signature there.
+    const double scaling = notation->viewState()->matrix().m11();
+    const float w = static_cast<float>(3.0 / (scaling != 0.0 ? scaling : 1.0));
+    if (mu::engraving::EngravingItem* hit = interaction->hitElement(muse::PointF(x, y), w)) {
+        interaction->select({ hit }, mu::engraving::SelectType::REPLACE);
+    }
+
+    auto ts = mu::engraving::Factory::makeTimeSig(score->dummy()->segment());
+    ts->setSig(mu::engraving::Fraction(num, den), mu::engraving::TimeSigType::NORMAL);
+    return interaction->applyPaletteElement(ts.get(), {});
 }
 
 QString PluginAPI::pluginType() const
