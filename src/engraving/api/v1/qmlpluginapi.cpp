@@ -54,6 +54,7 @@
 #include "engraving/dom/arpeggio.h"     // T2: Arpeggio (applyArpeggio)
 #include "engraving/dom/volta.h"        // T2: Volta (applySpan volta)
 #include "engraving/dom/breath.h"       // T2: Breath (applyArticulation caesura)
+#include "engraving/dom/ornament.h"     // T2: Ornament (applyArticulation trill)
 #include "engraving/dom/articulation.h" // T2: Articulation (applyArticulation)
 #include "engraving/dom/chord.h"        // T2: dummy()->chord() parent for makeArticulation
 #include "engraving/dom/note.h"         // T2: snap span/articulation endpoints to the nearest Note
@@ -762,9 +763,16 @@ bool PluginAPI::dropSingle(const QString& element, qreal x, qreal y)
         built = clef;
     } else if (element == "barline") {
         built = mu::engraving::Factory::makeBarLine(score->dummy()->segment()); // default NORMAL
-    } else if (element == "barline_double") {
+    } else if (element == "barline_double" || element == "barline_start_repeat"
+               || element == "barline_end_repeat") {
         auto bl = mu::engraving::Factory::makeBarLine(score->dummy()->segment());
-        bl->setBarLineType(mu::engraving::BarLineType::DOUBLE);
+        mu::engraving::BarLineType t = mu::engraving::BarLineType::DOUBLE;
+        if (element == "barline_start_repeat") {
+            t = mu::engraving::BarLineType::START_REPEAT;
+        } else if (element == "barline_end_repeat") {
+            t = mu::engraving::BarLineType::END_REPEAT;
+        }
+        bl->setBarLineType(t);
         built = bl;
     } else {
         return false;
@@ -971,6 +979,12 @@ bool PluginAPI::applyArticulation(const QString& kind, qreal x, qreal y)
         auto br = mu::engraving::Factory::makeBreath(score->dummy()->segment());
         br->setSymId(mu::engraving::SymId::caesura);
         return interaction->applyPaletteElement(br.get(), {});
+    }
+    // Trill is an Ornament (an Articulation subclass) with a dedicated factory.
+    if (kind == "trill") {
+        auto orn = mu::engraving::Factory::makeOrnament(score->dummy()->chord());
+        orn->setSymId(mu::engraving::SymId::ornamentTrill);
+        return interaction->applyPaletteElement(orn.get(), {});
     }
 
     mu::engraving::SymId sym = mu::engraving::SymId::noSym;
