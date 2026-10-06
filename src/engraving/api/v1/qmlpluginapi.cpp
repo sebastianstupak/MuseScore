@@ -746,7 +746,7 @@ bool PluginAPI::dropSingle(const QString& element, qreal x, qreal y)
     return interaction->applyPaletteElement(built.get(), {});
 }
 
-bool PluginAPI::putTimeSig(int num, int den, qreal x, qreal y)
+bool PluginAPI::putTimeSig(int num, int den, const QString& sym, qreal x, qreal y)
 {
     if (num <= 0 || den <= 0) {
         return false;
@@ -768,8 +768,17 @@ bool PluginAPI::putTimeSig(int num, int den, qreal x, qreal y)
         interaction->select({ hit }, mu::engraving::SelectType::REPLACE);
     }
 
+    // Common/Cut carry the C / ¢ glyph (FOUR_FOUR / ALLA_BREVE); everything else
+    // uses the numeric NORMAL style.
+    mu::engraving::TimeSigType type = mu::engraving::TimeSigType::NORMAL;
+    if (sym == "common") {
+        type = mu::engraving::TimeSigType::FOUR_FOUR;
+    } else if (sym == "cut") {
+        type = mu::engraving::TimeSigType::ALLA_BREVE;
+    }
+
     auto ts = mu::engraving::Factory::makeTimeSig(score->dummy()->segment());
-    ts->setSig(mu::engraving::Fraction(num, den), mu::engraving::TimeSigType::NORMAL);
+    ts->setSig(mu::engraving::Fraction(num, den), type);
     return interaction->applyPaletteElement(ts.get(), {});
 }
 

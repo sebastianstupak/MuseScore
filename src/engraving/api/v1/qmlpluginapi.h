@@ -582,7 +582,7 @@ public:
     /// Place a time signature \p num/\p den at a score point (selects the element
     /// under the point, then applies the time signature like a palette double-click).
     /// Returns true if applied.
-    Q_INVOKABLE bool putTimeSig(int num, int den, qreal x, qreal y);
+    Q_INVOKABLE bool putTimeSig(int num, int den, const QString& sym, qreal x, qreal y);
     /// \endcond
 
     Q_INVOKABLE void log(const QString&);
