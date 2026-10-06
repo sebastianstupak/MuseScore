@@ -45,6 +45,7 @@
 #include "notation/inotationelements.h"
 #include "engraving/dom/note.h"
 #include "engraving/dom/chord.h"
+#include "engraving/dom/durationtype.h"   // self-test: TDuration::type() for chord case
 #include "engraving/dom/measure.h"
 #include "engraving/dom/segment.h"
 #include "engraving/dom/score.h"
@@ -558,6 +559,46 @@ void VimController::runSelfTest()
     // toggleDots targets the input-state duration, not the selection). Like every
     // other gated action, it only executes with notation focus, so it has no
     // headless OUTCOME case here — it's exercised in the focused GUI.
+
+    // CHORD apply: the recognizer emits one PutNote per chord notehead at the same
+    // beat-x; the host's repeated putNote(replace=false) stacks them. Verify both
+    // (a) a distinct pitch at the same beat GROWS the chord, and (b) re-placing the
+    // SAME pitch does NOT add a duplicate (it toggles back) — deterministic because
+    // the added pitch is offset from the anchor, so it cannot pre-exist.
+    {
+        injOne('\x1b');
+        reselect();
+        Note* note = findFirstNote();
+        int before = -1, grown = -1, deduped = -1;
+        if (note) {
+            auto noteInput = notation->interaction()->noteInput();
+            if (noteInput) {
+                const double sp = note->spatium();
+                muse::PointF pos = note->canvasBoundingRect().center();
+                pos.setY(pos.y() - 3.0 * sp); // a few staff positions up -> a new pitch
+                const bool wasActive = noteInput->isNoteInputMode();
+                if (!wasActive) {
+                    noteInput->startNoteInput();
+                }
+                noteInput->setDuration(note->chord()->durationType().type()); // match -> add-to-chord
+                before = static_cast<int>(note->chord()->notes().size());
+                noteInput->putNote(pos, false, false); // add the new pitch
+                if (Note* n = findFirstNote()) {
+                    grown = static_cast<int>(n->chord()->notes().size());
+                }
+                noteInput->putNote(pos, false, false); // same pitch again -> toggles back
+                if (Note* n = findFirstNote()) {
+                    deduped = static_cast<int>(n->chord()->notes().size());
+                }
+                if (!wasActive) {
+                    noteInput->endNoteInput();
+                }
+            }
+        }
+        check("T2 chord: putNote stacks a new pitch, and a duplicate does not add",
+              before >= 1 && grown == before + 1 && deduped == before,
+              QString("notes %1 ->(+pitch) %2 ->(dup) %3").arg(before).arg(grown).arg(deduped));
+    }
 
     // ===== verdict =====
     m_recording = false;
