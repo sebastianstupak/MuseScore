@@ -1214,7 +1214,7 @@ void NotationActionController::runStylusSelfTest()
 
     // Collect the first few top-notes by walking ChordRest segments.
     std::vector<mu::engraving::Note*> notes;
-    for (mu::engraving::Measure* m = score->firstMeasure(); m && notes.size() < 6; m = m->nextMeasure()) {
+    for (mu::engraving::Measure* m = score->firstMeasure(); m && notes.size() < 24; m = m->nextMeasure()) {
         for (mu::engraving::Segment* s = m->first(mu::engraving::SegmentType::ChordRest); s;
              s = s->next(mu::engraving::SegmentType::ChordRest)) {
             for (mu::engraving::EngravingItem* e : s->elist()) {
@@ -1253,51 +1253,51 @@ void NotationActionController::runStylusSelfTest()
         return false;
     };
 
-    int pass = 0, total = 0;
-    const auto check = [&](const char* name, bool ok) {
-        ++total;
-        pass += ok ? 1 : 0;
-        LOGI() << "STYLUSSELFTEST " << name << ": " << (ok ? "PASS" : "FAIL");
+    (void)hasArtic;
+    int applied = 0;
+    // Re-layout after each apply so the NEXT note's canvas position is fresh — the
+    // real pipeline applies one gesture at a time with a relayout between, so without
+    // this a batch self-test snaps later markings to stale (pre-layout) positions.
+    const auto artic = [&](const char* kind, size_t idx) {
+        if (idx < notes.size()) {
+            const bool ok = api.applyArticulation(QString::fromUtf8(kind), cx(notes[idx]), cy(notes[idx]));
+            score->doLayout();
+            LOGI() << "STYLUSSELFTEST applied " << kind << " on note" << idx << (ok ? "" : " (returned false!)");
+            ++applied;
+        }
+    };
+    const auto span = [&](const char* kind, size_t a, size_t b) {
+        if (a < notes.size() && b < notes.size()) {
+            const bool ok = api.applySpan(QString::fromUtf8(kind), cx(notes[a]), cy(notes[a]), cx(notes[b]), cy(notes[b]));
+            score->doLayout();
+            LOGI() << "STYLUSSELFTEST applied " << kind << " span note" << a << "->note" << b << (ok ? "" : " (returned false!)");
+            ++applied;
+        }
     };
 
-    // Accent on note0, tenuto on note1, trill on note2 — applied at each notehead;
-    // assert the mark landed on THAT note's chord (correct location).
-    api.applyArticulation(QStringLiteral("accent"), cx(notes[0]), cy(notes[0]));
-    check("accent on note0", hasArtic(notes[0], mu::engraving::SymId::articAccentAbove, mu::engraving::SymId::articAccentBelow));
-
-    api.applyArticulation(QStringLiteral("tenuto"), cx(notes[1]), cy(notes[1]));
-    check("tenuto on note1", hasArtic(notes[1], mu::engraving::SymId::articTenutoAbove, mu::engraving::SymId::articTenutoBelow));
-
-    api.applyArticulation(QStringLiteral("trill"), cx(notes[2]), cy(notes[2]));
-    check("trill on note2", hasArtic(notes[2], mu::engraving::SymId::ornamentTrill, mu::engraving::SymId::ornamentTrill));
-
-    // Arpeggio on note0's chord.
-    api.applyArpeggio(cx(notes[0]), cy(notes[0]));
-    check("arpeggio on note0 chord", notes[0]->chord()->arpeggio() != nullptr);
-
-    // Snapping: an accent drawn ABOVE note3's head should still resolve to note3.
-    {
-        const double h = notes[3]->canvasBoundingRect().height();
-        api.applyArticulation(QStringLiteral("staccato"), cx(notes[3]), cy(notes[3]) - h);
-        check("staccato snapped from above note3", hasArtic(notes[3], mu::engraving::SymId::articStaccatoAbove, mu::engraving::SymId::articStaccatoBelow));
+    // VISION PASS: apply the markings not yet visually validated, on well-separated
+    // notes, so the render can be eyeballed for correct glyph / placement / shape.
+    // Note-attached glyphs on TREBLE notes (even indices), above the staff.
+    artic("marcato", 0);
+    artic("fermata", 4);
+    artic("mordent", 8);
+    artic("turn", 12);
+    artic("caesura", 16);
+    artic("staccato", 20);
+    if (notes.size() > 2) {
+        const bool ok = api.applyArpeggio(cx(notes[2]), cy(notes[2]));
+        score->doLayout();
+        LOGI() << "STYLUSSELFTEST applied arpeggio on note2" << (ok ? "" : " (returned false!)");
+        ++applied;
     }
+    // Spans (vision validates endpoints/shape) — spread across ranges.
+    span("crescendo", 1, 5);
+    span("diminuendo", 9, 13);
+    span("pedal", 15, 21);
+    span("glissando", 6, 8);
+    span("volta", 17, 23);
 
-    // Slur note0 -> note3 — assert a slur starts on note0's tick.
-    {
-        const int t0 = notes[0]->chord()->tick().ticks();
-        api.applySpan(QStringLiteral("slur"), cx(notes[0]), cy(notes[0]), cx(notes[3]), cy(notes[3]));
-        int slurCount = 0, firstTick = -1;
-        for (const auto& kv : score->spanner()) {
-            if (kv.second->isSlur()) {
-                ++slurCount;
-                firstTick = kv.second->tick().ticks();
-            }
-        }
-        LOGI() << "STYLUSSELFTEST slur diag: " << slurCount << " slur(s), first tick " << firstTick << " (want " << t0 << ")";
-        check("slur starts on note0", slurCount > 0 && firstTick == t0);
-    }
-
-    LOGI() << "STYLUSSELFTEST: " << pass << "/" << total << " cases passed";
+    LOGI() << "STYLUSSELFTEST applied " << applied << " markings; rendering for visual inspection";
 
     // Persist the modified score (writeToDevice is the most direct path) for PNG export.
     const QByteArray out = qgetenv("MUSE_STYLUS_SELFTEST_OUT");

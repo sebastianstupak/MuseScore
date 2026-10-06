@@ -930,7 +930,13 @@ bool PluginAPI::applySpan(const QString& kind, qreal x1, qreal y1, qreal x2, qre
     }
 
     interaction->select({ a }, mu::engraving::SelectType::REPLACE);
-    interaction->select({ b }, mu::engraving::SelectType::RANGE);
+    // A glissando is note-to-note: applying it over a RANGE makes one per adjacent
+    // pair (clutter). Select only the start note so a single glissando is created to
+    // the next note. The range spanners (slur/hairpin/pedal/volta) extend over the
+    // whole range.
+    if (kind != "glissando") {
+        interaction->select({ b }, mu::engraving::SelectType::RANGE);
+    }
 
     std::shared_ptr<mu::engraving::EngravingItem> built;
     if (kind == "slur") {
