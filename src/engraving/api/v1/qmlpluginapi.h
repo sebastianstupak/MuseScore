@@ -587,6 +587,10 @@ public:
     /// ("slur","crescendo","diminuendo","pedal"). Selects the range between the two
     /// score points and applies the spanner. Returns true if applied.
     Q_INVOKABLE bool applySpan(const QString& kind, qreal x1, qreal y1, qreal x2, qreal y2);
+    /// Toggle a note articulation at a score point. \p kind is a neume/proto token
+    /// ("tenuto","accent","staccato","marcato","fermata"). Selects the note under
+    /// the point and applies the articulation. Returns true if applied.
+    Q_INVOKABLE bool applyArticulation(const QString& kind, qreal x, qreal y);
     /// \endcond
 
     Q_INVOKABLE void log(const QString&);

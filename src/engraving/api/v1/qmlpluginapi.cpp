@@ -50,6 +50,9 @@
 #include "engraving/dom/slur.h"         // T2: Slur (applySpan legato)
 #include "engraving/dom/hairpin.h"      // T2: Hairpin / HairpinType (applySpan cresc/dim)
 #include "engraving/dom/pedal.h"        // T2: Pedal (applySpan pedal)
+#include "engraving/dom/articulation.h" // T2: Articulation (applyArticulation)
+#include "engraving/dom/chord.h"        // T2: dummy()->chord() parent for makeArticulation
+#include "engraving/types/symid.h"      // T2: SymId (articulation glyphs)
 
 // api
 #include "engravingapiv1.h"
@@ -823,6 +826,46 @@ bool PluginAPI::applySpan(const QString& kind, qreal x1, qreal y1, qreal x2, qre
         return false;
     }
     return interaction->applyPaletteElement(built.get(), {});
+}
+
+bool PluginAPI::applyArticulation(const QString& kind, qreal x, qreal y)
+{
+    notation::INotationPtr notation = context()->currentNotation();
+    if (!notation) {
+        return false;
+    }
+    mu::engraving::Score* score = notation->elements() ? notation->elements()->msScore() : nullptr;
+    if (!score) {
+        return false;
+    }
+    auto interaction = notation->interaction();
+
+    // Select the note under the point; the articulation toggles onto it.
+    const double scaling = notation->viewState()->matrix().m11();
+    const float w = static_cast<float>(3.0 / (scaling != 0.0 ? scaling : 1.0));
+    mu::engraving::EngravingItem* hit = interaction->hitElement(muse::PointF(x, y), w);
+    if (!hit) {
+        return false;
+    }
+    interaction->select({ hit }, mu::engraving::SelectType::REPLACE);
+
+    mu::engraving::SymId sym = mu::engraving::SymId::noSym;
+    if (kind == "tenuto") {
+        sym = mu::engraving::SymId::articTenutoAbove;
+    } else if (kind == "accent") {
+        sym = mu::engraving::SymId::articAccentAbove;
+    } else if (kind == "staccato") {
+        sym = mu::engraving::SymId::articStaccatoAbove;
+    } else if (kind == "marcato") {
+        sym = mu::engraving::SymId::articMarcatoAbove;
+    } else if (kind == "fermata") {
+        sym = mu::engraving::SymId::fermataAbove;
+    } else {
+        return false;
+    }
+    auto art = mu::engraving::Factory::makeArticulation(score->dummy()->chord());
+    art->setSymId(sym);
+    return interaction->applyPaletteElement(art.get(), {});
 }
 
 QString PluginAPI::pluginType() const
