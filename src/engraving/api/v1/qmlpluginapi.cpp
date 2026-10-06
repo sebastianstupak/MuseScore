@@ -52,6 +52,8 @@
 #include "engraving/dom/pedal.h"        // T2: Pedal (applySpan pedal)
 #include "engraving/dom/glissando.h"    // T2: Glissando (applySpan glissando)
 #include "engraving/dom/arpeggio.h"     // T2: Arpeggio (applyArpeggio)
+#include "engraving/dom/volta.h"        // T2: Volta (applySpan volta)
+#include "engraving/dom/breath.h"       // T2: Breath (applyArticulation caesura)
 #include "engraving/dom/articulation.h" // T2: Articulation (applyArticulation)
 #include "engraving/dom/chord.h"        // T2: dummy()->chord() parent for makeArticulation
 #include "engraving/dom/note.h"         // T2: snap span/articulation endpoints to the nearest Note
@@ -934,6 +936,8 @@ bool PluginAPI::applySpan(const QString& kind, qreal x1, qreal y1, qreal x2, qre
         built = std::shared_ptr<mu::engraving::EngravingItem>(mu::engraving::Factory::createPedal(score->dummy()));
     } else if (kind == "glissando") {
         built = mu::engraving::Factory::makeGlissando(score->dummy());
+    } else if (kind == "volta") {
+        built = std::shared_ptr<mu::engraving::EngravingItem>(mu::engraving::Factory::createVolta(score->dummy()));
     } else {
         return false;
     }
@@ -961,6 +965,13 @@ bool PluginAPI::applyArticulation(const QString& kind, qreal x, qreal y)
         return false;
     }
     interaction->select({ note }, mu::engraving::SelectType::REPLACE);
+
+    // Caesura is a Breath-family mark, not an Articulation — build a Breath.
+    if (kind == "caesura") {
+        auto br = mu::engraving::Factory::makeBreath(score->dummy()->segment());
+        br->setSymId(mu::engraving::SymId::caesura);
+        return interaction->applyPaletteElement(br.get(), {});
+    }
 
     mu::engraving::SymId sym = mu::engraving::SymId::noSym;
     if (kind == "tenuto") {
