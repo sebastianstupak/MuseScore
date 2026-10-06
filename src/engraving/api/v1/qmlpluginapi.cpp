@@ -700,14 +700,13 @@ bool PluginAPI::dropSingle(const QString& element, qreal x, qreal y)
         interaction->select({ hit }, mu::engraving::SelectType::REPLACE);
     }
 
-    // A dot is not a droppable palette element — it toggles an augmentation dot
-    // on the note/input at the point.
+    // A dot is not a droppable palette element and noteInput->toggleDots targets
+    // the input-state duration, not the selection. The note under the point is
+    // already selected above, so apply an augmentation dot via the pad-dot action
+    // (same as pressing "." on a selected note).
     if (element == "dot") {
-        if (const auto& noteInput = interaction->noteInput()) {
-            noteInput->toggleDots(1);
-            return true;
-        }
-        return false;
+        actionsDispatcher()->dispatch("pad-dot");
+        return true;
     }
 
     // Build the element palette-style; keep it alive across applyPaletteElement
