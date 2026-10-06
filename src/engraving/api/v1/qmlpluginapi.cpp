@@ -53,6 +53,9 @@
 #include "engraving/dom/glissando.h"    // T2: Glissando (applySpan glissando)
 #include "engraving/dom/articulation.h" // T2: Articulation (applyArticulation)
 #include "engraving/dom/chord.h"        // T2: dummy()->chord() parent for makeArticulation
+#include "engraving/dom/note.h"         // T2: snap span/articulation endpoints to the nearest Note
+#include "engraving/dom/segment.h"      // T2: walk ChordRest segments for note snapping
+#include "engraving/dom/measure.h"      // T2: walk measures for note snapping
 #include "engraving/types/symid.h"      // T2: SymId (articulation glyphs)
 
 // api
@@ -789,6 +792,78 @@ bool PluginAPI::putTimeSig(int num, int den, const QString& sym, qreal x, qreal 
     return interaction->applyPaletteElement(ts.get(), {});
 }
 
+// Resolve a hit point to the Note the user most likely aimed at. First take the
+// element under the pen (small tolerance) and walk up to its Note/Chord; a hit on
+// a stem/beam/ledger/accidental therefore resolves to the chord's nearest note.
+// If the pen missed every element, fall back to the globally nearest notehead so
+// a line/mark drawn a little off the noteheads still anchors to real notes.
+static mu::engraving::Note* nearestNoteToPoint(const mu::notation::INotationPtr& notation,
+                                               qreal x, qreal y, float width)
+{
+    if (!notation) {
+        return nullptr;
+    }
+    mu::engraving::Score* score = notation->elements() ? notation->elements()->msScore() : nullptr;
+    if (!score) {
+        return nullptr;
+    }
+    auto centerY = [](mu::engraving::Note* n) {
+        const muse::RectF r = n->canvasBoundingRect();
+        return r.y() + r.height() / 2.0;
+    };
+
+    // Fast path: element under the pen, resolved up to its Note/Chord.
+    if (mu::engraving::EngravingItem* hit = notation->interaction()->hitElement(muse::PointF(x, y), width)) {
+        mu::engraving::EngravingObject* e = hit;
+        while (e) {
+            if (e->isNote()) {
+                return mu::engraving::toNote(e);
+            }
+            if (e->isChord()) {
+                mu::engraving::Note* best = nullptr;
+                double bestDy = std::numeric_limits<double>::max();
+                for (mu::engraving::Note* n : mu::engraving::toChord(e)->notes()) {
+                    const double dy = std::abs(centerY(n) - y);
+                    if (dy < bestDy) {
+                        bestDy = dy;
+                        best = n;
+                    }
+                }
+                if (best) {
+                    return best;
+                }
+                break;
+            }
+            e = e->parent();
+        }
+    }
+
+    // Fallback: the globally nearest notehead (the pen missed every element).
+    mu::engraving::Note* best = nullptr;
+    double bestD2 = std::numeric_limits<double>::max();
+    for (mu::engraving::Measure* m = score->firstMeasure(); m; m = m->nextMeasure()) {
+        for (mu::engraving::Segment* s = m->first(mu::engraving::SegmentType::ChordRest); s;
+             s = s->next(mu::engraving::SegmentType::ChordRest)) {
+            for (mu::engraving::EngravingItem* el : s->elist()) {
+                if (!el || !el->isChord()) {
+                    continue;
+                }
+                for (mu::engraving::Note* n : mu::engraving::toChord(el)->notes()) {
+                    const muse::RectF r = n->canvasBoundingRect();
+                    const double cx = r.x() + r.width() / 2.0;
+                    const double cy = r.y() + r.height() / 2.0;
+                    const double d2 = (cx - x) * (cx - x) + (cy - y) * (cy - y);
+                    if (d2 < bestD2) {
+                        bestD2 = d2;
+                        best = n;
+                    }
+                }
+            }
+        }
+    }
+    return best;
+}
+
 bool PluginAPI::applySpan(const QString& kind, qreal x1, qreal y1, qreal x2, qreal y2)
 {
     notation::INotationPtr notation = context()->currentNotation();
@@ -803,10 +878,14 @@ bool PluginAPI::applySpan(const QString& kind, qreal x1, qreal y1, qreal x2, qre
     const double scaling = notation->viewState()->matrix().m11();
     const float w = static_cast<float>(3.0 / (scaling != 0.0 ? scaling : 1.0));
 
-    // Select the range between the two gesture endpoints, then apply the spanner
-    // over it (same as selecting a range and double-clicking a palette line).
-    mu::engraving::EngravingItem* a = interaction->hitElement(muse::PointF(x1, y1), w);
-    mu::engraving::EngravingItem* b = interaction->hitElement(muse::PointF(x2, y2), w);
+    // Snap each gesture endpoint to the note the user aimed at (not whatever bare
+    // element sits under the raw pen point), then select the range between the two
+    // notes and apply the spanner over it (as if selecting a range and
+    // double-clicking a palette line). Snapping is what makes "draw a line from one
+    // note to another" land on those two notes even when the endpoints are a little
+    // off the noteheads or graze a stem/ledger.
+    mu::engraving::Note* a = nearestNoteToPoint(notation, x1, y1, w);
+    mu::engraving::Note* b = nearestNoteToPoint(notation, x2, y2, w);
     if (!a || !b) {
         return false;
     }
@@ -843,14 +922,15 @@ bool PluginAPI::applyArticulation(const QString& kind, qreal x, qreal y)
     }
     auto interaction = notation->interaction();
 
-    // Select the note under the point; the articulation toggles onto it.
+    // Snap to the note the user aimed at (not the bare element under the raw pen
+    // point), then toggle the articulation onto it.
     const double scaling = notation->viewState()->matrix().m11();
     const float w = static_cast<float>(3.0 / (scaling != 0.0 ? scaling : 1.0));
-    mu::engraving::EngravingItem* hit = interaction->hitElement(muse::PointF(x, y), w);
-    if (!hit) {
+    mu::engraving::Note* note = nearestNoteToPoint(notation, x, y, w);
+    if (!note) {
         return false;
     }
-    interaction->select({ hit }, mu::engraving::SelectType::REPLACE);
+    interaction->select({ note }, mu::engraving::SelectType::REPLACE);
 
     mu::engraving::SymId sym = mu::engraving::SymId::noSym;
     if (kind == "tenuto") {
