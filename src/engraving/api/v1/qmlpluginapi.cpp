@@ -688,6 +688,9 @@ void PluginAPI::deleteSelection()
     notation->interaction()->deleteSelection();
 }
 
+static mu::engraving::Note* nearestNoteToPoint(const mu::notation::INotationPtr& notation,
+                                               qreal x, qreal y, float width);
+
 bool PluginAPI::dropSingle(const QString& element, qreal x, qreal y)
 {
     // NOTE: this method lives in namespace mu::engraving::apiv1, where bare
@@ -711,11 +714,21 @@ bool PluginAPI::dropSingle(const QString& element, qreal x, qreal y)
         interaction->select({ hit }, mu::engraving::SelectType::REPLACE);
     }
 
-    // A dot is not a droppable palette element and noteInput->toggleDots targets
-    // the input-state duration, not the selection. The note under the point is
-    // already selected above, so apply an augmentation dot via the pad-dot action
-    // (same as pressing "." on a selected note).
+    // A dot above or below a notehead is a staccato; a dot beside it (within the
+    // head's vertical extent) is an augmentation dot. Decide by the snapped note's
+    // geometry — the same gesture means different things by position, and only the
+    // fork knows where the note is.
     if (element == "dot") {
+        if (mu::engraving::Note* note = nearestNoteToPoint(notation, x, y, w)) {
+            const muse::RectF r = note->canvasBoundingRect();
+            if (y < r.y() || y > r.y() + r.height()) {
+                interaction->select({ note }, mu::engraving::SelectType::REPLACE);
+                auto art = mu::engraving::Factory::makeArticulation(score->dummy()->chord());
+                art->setSymId(mu::engraving::SymId::articStaccatoAbove);
+                return interaction->applyPaletteElement(art.get(), {});
+            }
+        }
+        // beside the head (or no note nearby) -> augmentation dot, as before.
         actionsDispatcher()->dispatch("pad-dot");
         return true;
     }
@@ -747,6 +760,10 @@ bool PluginAPI::dropSingle(const QString& element, qreal x, qreal y)
         built = clef;
     } else if (element == "barline") {
         built = mu::engraving::Factory::makeBarLine(score->dummy()->segment()); // default NORMAL
+    } else if (element == "barline_double") {
+        auto bl = mu::engraving::Factory::makeBarLine(score->dummy()->segment());
+        bl->setBarLineType(mu::engraving::BarLineType::DOUBLE);
+        built = bl;
     } else {
         return false;
     }
