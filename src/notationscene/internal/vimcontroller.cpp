@@ -50,9 +50,12 @@
 #include "engraving/dom/score.h"
 #include "engraving/dom/mscore.h"
 #include "engraving/dom/noteval.h"
-#include "engraving/dom/factory.h"      // self-test: build Accidental/Clef for applyPaletteElement
+#include "engraving/dom/factory.h"      // self-test: build Accidental/Clef/BarLine/TimeSig for applyPaletteElement
 #include "engraving/dom/accidental.h"   // self-test: AccidentalType + Note::accidental()
 #include "engraving/dom/clef.h"         // self-test: ClefType / ClefTypeList
+#include "engraving/dom/barline.h"      // self-test: BarLine
+#include "engraving/dom/timesig.h"      // self-test: TimeSig / TimeSigType
+#include "engraving/types/fraction.h"   // self-test: Fraction
 #include "engraving/editing/noteinput.h"
 #include "engraving/editing/transaction/transaction.h"
 
@@ -523,6 +526,38 @@ void VimController::runSelfTest()
         check("T2 putRest: rest inserted at position", ran && after > before,
               QString("rests %1 -> %2").arg(before).arg(after));
     }
+    {
+        injOne('\x1b');
+        reselect();
+        Note* note = findFirstNote();
+        Score* score = notation->elements() ? notation->elements()->msScore() : nullptr;
+        bool applied = false;
+        if (note && score) {
+            notation->interaction()->select({ note }, SelectType::SINGLE);
+            auto bl = Factory::makeBarLine(score->dummy()->segment());
+            applied = notation->interaction()->applyPaletteElement(bl.get(), {});
+        }
+        check("T2 dropSingle: barline applies", applied, QString("applied=%1").arg(applied));
+    }
+    {
+        injOne('\x1b');
+        reselect();
+        Note* note = findFirstNote();
+        Score* score = notation->elements() ? notation->elements()->msScore() : nullptr;
+        bool applied = false;
+        if (note && score) {
+            notation->interaction()->select({ note }, SelectType::SINGLE);
+            auto ts = Factory::makeTimeSig(score->dummy()->segment());
+            ts->setSig(Fraction(6, 8), TimeSigType::NORMAL);
+            applied = notation->interaction()->applyPaletteElement(ts.get(), {});
+        }
+        check("T2 putTimeSig: time signature applies", applied, QString("applied=%1").arg(applied));
+    }
+    // NOTE: the "dot" apply path uses the context-gated `pad-dot` action (adding an
+    // augmentation dot to a selected note is not a palette drop, and noteInput
+    // toggleDots targets the input-state duration, not the selection). Like every
+    // other gated action, it only executes with notation focus, so it has no
+    // headless OUTCOME case here — it's exercised in the focused GUI.
 
     // ===== verdict =====
     m_recording = false;
