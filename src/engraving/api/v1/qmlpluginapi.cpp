@@ -980,10 +980,17 @@ bool PluginAPI::applyArticulation(const QString& kind, qreal x, qreal y)
         br->setSymId(mu::engraving::SymId::caesura);
         return interaction->applyPaletteElement(br.get(), {});
     }
-    // Trill is an Ornament (an Articulation subclass) with a dedicated factory.
-    if (kind == "trill") {
+    // Trill/mordent/turn are Ornaments (an Articulation subclass) with a dedicated
+    // factory.
+    if (kind == "trill" || kind == "mordent" || kind == "turn") {
         auto orn = mu::engraving::Factory::makeOrnament(score->dummy()->chord());
-        orn->setSymId(mu::engraving::SymId::ornamentTrill);
+        mu::engraving::SymId osym = mu::engraving::SymId::ornamentTrill;
+        if (kind == "mordent") {
+            osym = mu::engraving::SymId::ornamentMordent;
+        } else if (kind == "turn") {
+            osym = mu::engraving::SymId::ornamentTurn;
+        }
+        orn->setSymId(osym);
         return interaction->applyPaletteElement(orn.get(), {});
     }
 
