@@ -47,6 +47,9 @@
 #include "engraving/dom/barline.h"      // T2: BarLine (dropSingle barline)
 #include "engraving/dom/timesig.h"      // T2: TimeSig / TimeSigType (putTimeSig)
 #include "engraving/types/fraction.h"   // T2: Fraction (putTimeSig)
+#include "engraving/dom/slur.h"         // T2: Slur (applySpan legato)
+#include "engraving/dom/hairpin.h"      // T2: Hairpin / HairpinType (applySpan cresc/dim)
+#include "engraving/dom/pedal.h"        // T2: Pedal (applySpan pedal)
 
 // api
 #include "engravingapiv1.h"
@@ -780,6 +783,46 @@ bool PluginAPI::putTimeSig(int num, int den, const QString& sym, qreal x, qreal 
     auto ts = mu::engraving::Factory::makeTimeSig(score->dummy()->segment());
     ts->setSig(mu::engraving::Fraction(num, den), type);
     return interaction->applyPaletteElement(ts.get(), {});
+}
+
+bool PluginAPI::applySpan(const QString& kind, qreal x1, qreal y1, qreal x2, qreal y2)
+{
+    notation::INotationPtr notation = context()->currentNotation();
+    if (!notation) {
+        return false;
+    }
+    mu::engraving::Score* score = notation->elements() ? notation->elements()->msScore() : nullptr;
+    if (!score) {
+        return false;
+    }
+    auto interaction = notation->interaction();
+    const double scaling = notation->viewState()->matrix().m11();
+    const float w = static_cast<float>(3.0 / (scaling != 0.0 ? scaling : 1.0));
+
+    // Select the range between the two gesture endpoints, then apply the spanner
+    // over it (same as selecting a range and double-clicking a palette line).
+    mu::engraving::EngravingItem* a = interaction->hitElement(muse::PointF(x1, y1), w);
+    mu::engraving::EngravingItem* b = interaction->hitElement(muse::PointF(x2, y2), w);
+    if (!a || !b) {
+        return false;
+    }
+    interaction->select({ a }, mu::engraving::SelectType::REPLACE);
+    interaction->select({ b }, mu::engraving::SelectType::RANGE);
+
+    std::shared_ptr<mu::engraving::EngravingItem> built;
+    if (kind == "slur") {
+        built = mu::engraving::Factory::makeSlur(score->dummy());
+    } else if (kind == "crescendo" || kind == "diminuendo") {
+        auto h = mu::engraving::Factory::makeHairpin(score->dummy());
+        h->setHairpinType(kind == "crescendo" ? mu::engraving::HairpinType::CRESC_HAIRPIN
+                                              : mu::engraving::HairpinType::DIM_HAIRPIN);
+        built = h;
+    } else if (kind == "pedal") {
+        built = std::shared_ptr<mu::engraving::EngravingItem>(mu::engraving::Factory::createPedal(score->dummy()));
+    } else {
+        return false;
+    }
+    return interaction->applyPaletteElement(built.get(), {});
 }
 
 QString PluginAPI::pluginType() const

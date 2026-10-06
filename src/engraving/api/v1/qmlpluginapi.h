@@ -583,6 +583,10 @@ public:
     /// under the point, then applies the time signature like a palette double-click).
     /// Returns true if applied.
     Q_INVOKABLE bool putTimeSig(int num, int den, const QString& sym, qreal x, qreal y);
+    /// Apply a line/span marking over a range: \p kind is a neume/proto span token
+    /// ("slur","crescendo","diminuendo","pedal"). Selects the range between the two
+    /// score points and applies the spanner. Returns true if applied.
+    Q_INVOKABLE bool applySpan(const QString& kind, qreal x1, qreal y1, qreal x2, qreal y2);
     /// \endcond
 
     Q_INVOKABLE void log(const QString&);
