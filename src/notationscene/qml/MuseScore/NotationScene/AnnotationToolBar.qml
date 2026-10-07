@@ -77,6 +77,21 @@ Item {
     onWidthChanged: if (dockEdge !== "") applyDock()
     onHeightChanged: if (dockEdge !== "") applyDock()
 
+    // Re-dock when the WINDOW resizes, not just when this strip does.
+    //
+    // Without this, docking right lands on the left. applyDock() computes
+    // x = parent.width - width, and at Component.onCompleted the parent has
+    // no width yet, so that is negative and the clamp below pins it to 0.
+    // The strip then sits at the left edge insisting it is docked right --
+    // measured on the tablet, where it covered the palettes panel and the
+    // Layout tab instead of the music it was moved to avoid.
+    Connections {
+        target: root.parent
+        enabled: !!root.parent
+        function onWidthChanged()  { if (root.dockEdge !== "") root.applyDock() }
+        function onHeightChanged() { if (root.dockEdge !== "") root.applyDock() }
+    }
+
     function applyDock() {
         if (!parent) {
             return
