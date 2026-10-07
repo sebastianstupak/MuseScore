@@ -99,8 +99,6 @@ target_sources(notation PRIVATE
     internal/correctiontaxonomy.h
     internal/correctionrecord.cpp
     internal/correctionrecord.h
-    internal/previewmeasure.cpp
-    internal/previewmeasure.h
     internal/positionswriter.cpp
     internal/positionswriter.h
     internal/scorecallbacks.cpp
