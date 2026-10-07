@@ -35,7 +35,14 @@ Item {
     id: root
 
     property var view
-    property string dockEdge: ""   // "" (floating), "left", "right", "top", "bottom"
+    // Docked to the right edge by DEFAULT, not floating.
+    //
+    // Floating put it at x:420, which on this 2480px panel is squarely over
+    // the first page -- it covered the music every single launch, and the
+    // dock choice is not persisted, so "drag it out of the way" had to be
+    // redone every time. Right rather than left because the palettes panel
+    // already occupies the left.
+    property string dockEdge: "right"   // "" (floating), "left", "right", "top", "bottom"
     property bool floatHorizontal: false   // orientation while floating
     property bool menuOpen: false
     readonly property bool horizontal: dockEdge === "top" || dockEdge === "bottom" || (dockEdge === "" && floatHorizontal)
@@ -59,6 +66,11 @@ Item {
         if (Window.contentItem) {
             root.parent = Window.contentItem
         }
+        // applyDock() otherwise only runs from onDockEdgeChanged, which does
+        // NOT fire for the initial value -- so a default of "right" would
+        // have left the strip sitting at its floating x:420, over the music,
+        // while claiming to be docked.
+        Qt.callLater(applyDock)
     }
 
     onDockEdgeChanged: Qt.callLater(applyDock)

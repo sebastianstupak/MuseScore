@@ -25,6 +25,7 @@
 
 #include <memory>
 #include <limits>
+#include <QtGlobal>
 #include <QRectF>
 #include <QPainter>
 #include <QClipboard>
@@ -412,6 +413,32 @@ mu::engraving::ShadowNote* NotationInteraction::shadowNote() const
 
 void NotationInteraction::showShadowNoteForPosition(const PointF& pos)
 {
+    // The ghost notehead that follows the pointer in note-input mode.
+    //
+    // It is a mouse-era affordance: it answers "where would a click land",
+    // a question a pen answers by being where it is. On this tablet the
+    // mouse cursor is hidden outright (-nocursor), so the only thing moving
+    // under the nib is a grey notehead blinking in and out on every hover --
+    // and on e-ink each of those is a panel repaint, so it is slow as well
+    // as distracting.
+    //
+    // Suppressed at this one function on purpose: every caller that tracks a
+    // POSITION goes through it (pointer move, the paint view's cursor
+    // follow, the percussion popup), so there is one place to turn it off
+    // and one place to read about it. showShadowNoteForMidiPitch() is left
+    // alone -- that previews the key you just pressed on the piano
+    // keyboard, which is feedback you asked for rather than feedback that
+    // follows you around.
+    //
+    // Set STYLUS_GHOST_NOTE to get it back. Read with IsSet and defaulting
+    // to OFF, so unlike STYLUS_WRITE there is no empty-value trap: an empty
+    // value simply means "on", which is what setting it at all means.
+    static const bool ghostAllowed = qEnvironmentVariableIsSet("STYLUS_GHOST_NOTE");
+    if (!ghostAllowed) {
+        hideShadowNote();
+        return;
+    }
+
     const mu::engraving::InputState& inputState = score()->inputState();
     mu::engraving::ShadowNote& shadowNote = *score()->shadowNote();
 
