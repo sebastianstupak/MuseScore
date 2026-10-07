@@ -31,7 +31,6 @@
 #include "actions/actionable.h"
 #include "actions/iactionsdispatcher.h"
 #include "async/asyncable.h"
-#include "actions/iactionsdispatcher.h"
 #include "context/iglobalcontext.h"
 #include "playback/iplaybackcontroller.h"
 #include "ui/imainwindow.h"
@@ -92,7 +91,6 @@ class AbstractNotationPaintView : public muse::uicomponents::QuickPaintedView, p
     muse::ContextInject<muse::ui::IUiContextResolver> uiContextResolver = { this };
     muse::ContextInject<muse::ui::IMainWindow> mainWindow = { this };
     muse::ContextInject<muse::ui::IUiActionsRegister> actionsRegister = { this };
-    muse::ContextInject<muse::actions::IActionsDispatcher> dispatcher = { this };
 
 public:
     explicit AbstractNotationPaintView(QQuickItem* parent = nullptr);

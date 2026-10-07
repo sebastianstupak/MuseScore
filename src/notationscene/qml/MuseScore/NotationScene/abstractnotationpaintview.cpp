@@ -40,7 +40,6 @@
 #include "notation/inotationelements.h"
 #include "notation/inotationnoteinput.h"
 #include "notation/inotationpainting.h" // IWYU pragma: keep
-#include "notation/inotationselection.h"
 #include "notation/inotationstyle.h"
 #include "notation/internal/inotationundostack.h"
 #include "notation/inotationviewstate.h"

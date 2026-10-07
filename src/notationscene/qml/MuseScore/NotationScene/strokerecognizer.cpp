@@ -54,23 +54,27 @@
 using namespace mu::notation;
 using namespace muse;
 
-static mu::engraving::DurationType durationFromString(const QString& d)
+// 4.7 port: INotationNoteInput::setDuration(DurationType) is 5.0-only. 4.7 sets
+// the note-input duration through padNote(Pad), the same path the duration
+// buttons in the note-input toolbar use, so the recognizer maps straight to a
+// Pad instead of a DurationType.
+static mu::engraving::Pad padFromString(const QString& d)
 {
-    using DT = mu::engraving::DurationType;
+    using P = mu::engraving::Pad;
     if (d == "whole") {
-        return DT::V_WHOLE;
+        return P::NOTE1;
     } else if (d == "half") {
-        return DT::V_HALF;
+        return P::NOTE2;
     } else if (d == "eighth") {
-        return DT::V_EIGHTH;
+        return P::NOTE8;
     } else if (d == "16th") {
-        return DT::V_16TH;
+        return P::NOTE16;
     } else if (d == "32nd") {
-        return DT::V_32ND;
+        return P::NOTE32;
     } else if (d == "64th") {
-        return DT::V_64TH;
+        return P::NOTE64;
     }
-    return DT::V_QUARTER;
+    return P::NOTE4;
 }
 
 static void addUnique(std::vector<EngravingItem*>& out, EngravingItem* el)
@@ -279,7 +283,7 @@ int StrokeRecognizer::recognizeAndApply(const std::vector<std::vector<muse::Poin
             if (!noteInput->isNoteInputMode()) {
                 noteInput->startNoteInput();   // enter note input; pitch derived from pos.y
             }
-            noteInput->setDuration(durationFromString(r.duration));
+            noteInput->padNote(padFromString(r.duration));
             noteInput->putNote(pos, /*replace*/ false, /*insert*/ false);
             created = interaction->selection() ? interaction->selection()->element() : nullptr;
             ++applied;
