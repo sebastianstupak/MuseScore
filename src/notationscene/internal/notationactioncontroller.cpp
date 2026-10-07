@@ -33,6 +33,7 @@
 #include "engraving/dom/note.h"
 #include "engraving/dom/chord.h"
 #include "engraving/dom/page.h"
+#include "engraving/dom/measure.h"
 #include "engraving/dom/text.h"
 #include "engraving/dom/sig.h"
 #include "engraving/editing/noteinput.h"
@@ -1351,6 +1352,96 @@ void NotationActionController::runStylusSelfTest()
                 renderPng(dir + "/arpeggio.png");
             }
         }
+
+        // --- HOMUS symbol classes: the drawn symbols resolved into MuseScore glyphs,
+        // keyed by the HOMUS label so the dashboard can pair them with the test ink.
+        auto shotDropNote = [&](const char* key, const char* element, size_t idx) {
+            std::vector<mu::engraving::Note*> ns = loadFresh();
+            if (idx >= ns.size()) {
+                return;
+            }
+            const muse::RectF r = ns[idx]->chord()->canvasBoundingRect();
+            mu::engraving::apiv1::PluginAPI api2(iocContext());
+            api2.dropSingle(QString::fromUtf8(element), scx(ns[idx]), scy(ns[idx]));
+            currentNotationScore()->doLayout();
+            box(key, r);
+            renderPng(dir + "/" + QString::fromUtf8(key) + ".png");
+        };
+        auto shotDropMeasure = [&](const char* key, const char* element, size_t idx) {
+            std::vector<mu::engraving::Note*> ns = loadFresh();
+            if (idx >= ns.size()) {
+                return;
+            }
+            const muse::RectF r = ns[idx]->chord()->measure()->canvasBoundingRect();
+            mu::engraving::apiv1::PluginAPI api2(iocContext());
+            api2.dropSingle(QString::fromUtf8(element), scx(ns[idx]), scy(ns[idx]));
+            currentNotationScore()->doLayout();
+            box(key, r);
+            renderPng(dir + "/" + QString::fromUtf8(key) + ".png");
+        };
+        auto shotTimeSig = [&](const char* key, int num, int den, const char* sym) {
+            std::vector<mu::engraving::Note*> ns = loadFresh();
+            if (ns.empty()) {
+                return;
+            }
+            const muse::RectF r = ns[0]->chord()->measure()->canvasBoundingRect();
+            mu::engraving::apiv1::PluginAPI api2(iocContext());
+            api2.putTimeSig(num, den, QString::fromUtf8(sym), scx(ns[0]), scy(ns[0]));
+            currentNotationScore()->doLayout();
+            box(key, r);
+            renderPng(dir + "/" + QString::fromUtf8(key) + ".png");
+        };
+        auto shotRest = [&](const char* key, const char* dur, size_t idx) {
+            std::vector<mu::engraving::Note*> ns = loadFresh();
+            if (idx >= ns.size()) {
+                return;
+            }
+            const muse::RectF r = ns[idx]->chord()->canvasBoundingRect();
+            mu::engraving::apiv1::PluginAPI api2(iocContext());
+            api2.putRest(scx(ns[idx]), scy(ns[idx]), QString::fromUtf8(dur));
+            currentNotationScore()->doLayout();
+            box(key, r);
+            renderPng(dir + "/" + QString::fromUtf8(key) + ".png");
+        };
+        auto shotDot = [&](const char* key, size_t idx) {
+            std::vector<mu::engraving::Note*> ns = loadFresh();
+            if (idx >= ns.size()) {
+                return;
+            }
+            const muse::RectF r = ns[idx]->chord()->canvasBoundingRect();
+            mu::engraving::apiv1::PluginAPI api2(iocContext());
+            api2.dropSingle(QString::fromUtf8("dot"), r.x() + r.width() + 2.0, r.y() + r.height() / 2.0);
+            currentNotationScore()->doLayout();
+            box(key, r);
+            renderPng(dir + "/" + QString::fromUtf8(key) + ".png");
+        };
+
+        shotDropMeasure("G-Clef", "g_clef", 3);
+        shotDropMeasure("F-Clef", "f_clef", 5);
+        shotDropMeasure("C-Clef", "c_clef", 7);
+        shotDropNote("Sharp", "sharp", 1);
+        shotDropNote("Flat", "flat", 9);
+        shotDropNote("Natural", "natural", 11);
+        shotDropNote("Double-Sharp", "double_sharp", 13);
+        shotDropMeasure("Barline", "barline", 15);
+        shotDot("Dot", 17);
+        shotTimeSig("4-4-Time", 4, 4, "");
+        shotTimeSig("3-4-Time", 3, 4, "");
+        shotTimeSig("2-4-Time", 2, 4, "");
+        shotTimeSig("6-8-Time", 6, 8, "");
+        shotTimeSig("9-8-Time", 9, 8, "");
+        shotTimeSig("12-8-Time", 12, 8, "");
+        shotTimeSig("3-8-Time", 3, 8, "");
+        shotTimeSig("2-2-Time", 2, 2, "");
+        shotTimeSig("Common-Time", 4, 4, "common");
+        shotTimeSig("Cut-Time", 2, 2, "cut");
+        shotRest("Whole-Half-Rest", "half", 2);
+        shotRest("Quarter-Rest", "quarter", 6);
+        shotRest("Eighth-Rest", "eighth", 10);
+        shotRest("Sixteenth-Rest", "16th", 14);
+        shotRest("Thirty-Two-Rest", "32nd", 18);
+        shotRest("Sixty-Four-Rest", "64th", 22);
+
         QJsonObject root;
         root["boxes"] = boxes;
         mu::engraving::Score* last = currentNotationScore();
