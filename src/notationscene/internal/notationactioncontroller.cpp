@@ -1727,6 +1727,39 @@ void NotationActionController::runStylusSelfTest()
             renderPng(dir + "/" + key + ".png");
         }
 
+        // Pitch from vertical position: the SAME notehead gesture, drawn at different
+        // heights, is read as a different pitch -- the most basic "where you draw it is
+        // what it means". Enter one note per height across the staff.
+        {
+            std::vector<mu::engraving::Note*> nsb = loadFresh();
+            if (nsb.size() > 8) {
+                const double by = scy(nsb[8]);
+                const double step = nsb[8]->canvasBoundingRect().height(); // ~ a staff step
+                for (int k = 0; k < 5; ++k) {
+                    std::vector<mu::engraving::Note*> ns2 = loadFresh();
+                    if (ns2.size() <= 8) {
+                        continue;
+                    }
+                    const double y = by + static_cast<double>(2 - k) * step; // k=0 highest
+                    auto ni = currentNotation()->interaction()->noteInput();
+                    ni->startNoteInput();
+                    ni->setDuration(mu::engraving::DurationType::V_QUARTER);
+                    ni->putNote(muse::PointF(scx(ns2[8]), y), true, false);
+                    ni->endNoteInput();
+                    currentNotationScore()->doLayout();
+                    mu::engraving::EngravingItem* sel = currentNotationScore()->selection().element();
+                    mu::engraving::Note* n = (sel && sel->isNote()) ? static_cast<mu::engraving::Note*>(sel) : nullptr;
+                    if (!n) {
+                        continue;
+                    }
+                    const QString key = QString("pitch%1").arg(k);
+                    boxN(key, n->chord()->canvasBoundingRect());
+                    boxN(key + ".note", n->canvasBoundingRect());
+                    renderPng(dir + "/" + key + ".png");
+                }
+            }
+        }
+
         QJsonObject root;
         root["boxes"] = boxes;
         mu::engraving::Score* last = currentNotationScore();
