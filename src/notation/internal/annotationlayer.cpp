@@ -37,10 +37,11 @@
 #include "engraving/dom/system.h"
 #include "engraving/style/style.h"
 
-#include "engraving/editing/transaction/undoablecommand.h"
-#include "engraving/editing/transaction/transaction.h"
+// NOTE (4.7 port): engraving/editing/transaction/{transaction,undoablecommand}.h
+// do not exist on 4.7 -- the Transaction/UndoableCommand framework is new in 5.0.
+// See endUndoableEdit() below for what that costs here.
 
-#include "notation/inotationundostack.h"
+#include "notation/internal/inotationundostack.h"
 
 #include "global/types/translatablestring.h"
 
@@ -52,27 +53,9 @@ using namespace mu::notation;
 using namespace muse;
 using namespace muse::draw;
 
-namespace mu::notation {
-// Undo command for an ink edit: swap the whole strokes vector between its before
-// and after states (correct for add, erase and clear alike). It touches only the
-// AnnotationLayer, never the engraving DOM, so it triggers no layout.
-class InkEditCommand : public mu::engraving::UndoableCommand
-{
-public:
-    InkEditCommand(AnnotationLayer* layer, std::vector<AnnotationLayer::Stroke> before,
-                   std::vector<AnnotationLayer::Stroke> after)
-        : m_layer(layer), m_before(std::move(before)), m_after(std::move(after)) {}
-
-    void undo() override { m_layer->restoreStrokes(m_before); }
-    void redo() override { m_layer->restoreStrokes(m_after); }
-    const char* name() const override { return "InkEditCommand"; }
-
-private:
-    AnnotationLayer* m_layer = nullptr;
-    std::vector<AnnotationLayer::Stroke> m_before;
-    std::vector<AnnotationLayer::Stroke> m_after;
-};
-}
+// InkEditCommand (a mu::engraving::UndoableCommand that swaps the strokes vector
+// between its before and after states) is omitted on the 4.7 branch: its base
+// class ships only in 5.0. See endUndoableEdit().
 
 void AnnotationLayer::setScore(engraving::Score* score)
 {
@@ -180,17 +163,24 @@ void AnnotationLayer::beginUndoableEdit()
 
 void AnnotationLayer::endUndoableEdit(const INotationUndoStackPtr& undoStack)
 {
-    if (!undoStack || m_editSeq == m_editBeforeSeq) {
-        return;   // nothing changed during the edit
-    }
-    std::vector<Stroke> before = m_editBefore;
-    std::vector<Stroke> after = m_strokes;
-    AnnotationLayer* self = this;
-    undoStack->transaction(TranslatableString("undoableAction", "Edit ink annotations"),
-                           [self, before, after](engraving::Transaction& tx) {
-        // The edit already happened in the layer; record it without re-performing.
-        tx.pushWithoutPerforming(new InkEditCommand(self, before, after));
-    });
+    // KNOWN GAP ON 4.7: ink edits are not undoable.
+    //
+    // On 5.0 this pushes an InkEditCommand through
+    // undoStack->transaction(..., tx.pushWithoutPerforming(...)) -- recording a
+    // change that already happened in the layer, without re-performing it and
+    // without touching the engraving DOM.
+    //
+    // 4.7 has no equivalent reachable from here. Its INotationUndoStack offers
+    // prepareChanges/commitChanges, which wrap *score* mutations; ink lives
+    // outside the engraving undo system, and 4.7 exposes no hook to push an
+    // arbitrary UndoCommand through the notation interface. Supporting it would
+    // mean extending INotationUndoStack and NotationUndoStack -- a change to
+    // upstream interfaces, well beyond porting this patch.
+    //
+    // So: drawing and erasing ink works, and Ctrl+Z does not undo it. Everything
+    // else in the annotation layer is unaffected. Revisit if ink undo matters
+    // more than staying close to upstream 4.7.
+    (void)undoStack;
     m_editBefore.clear();
 }
 

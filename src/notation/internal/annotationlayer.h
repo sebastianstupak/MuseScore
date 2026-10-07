@@ -31,7 +31,7 @@
 #include "io/path.h"
 #include "types/ret.h"
 
-#include "../inotation_fwd.h"
+#include "inotationundostack.h"
 
 namespace mu::engraving {
 class MscReader;

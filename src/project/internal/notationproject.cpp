@@ -46,7 +46,7 @@
 
 #include "iprojectautosaver.h"
 #include "notation/iexcerptnotation.h" // IWYU pragma: keep
-#include "notation/inotationundostack.h" // IWYU pragma: keep
+#include "notation/internal/inotationundostack.h" // IWYU pragma: keep
 #include "notation/inotationviewstate.h"
 #include "notation/internal/annotationlayer.h"
 #include "notation/internal/masternotation.h"
