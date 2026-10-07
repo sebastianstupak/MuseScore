@@ -34,6 +34,7 @@
 #include "engraving/dom/chord.h"
 #include "engraving/dom/page.h"
 #include "engraving/dom/measure.h"
+#include "engraving/dom/durationtype.h"
 #include "engraving/dom/text.h"
 #include "engraving/dom/sig.h"
 #include "engraving/editing/noteinput.h"
@@ -1441,6 +1442,35 @@ void NotationActionController::runStylusSelfTest()
         shotRest("Sixteenth-Rest", "16th", 14);
         shotRest("Thirty-Two-Rest", "32nd", 18);
         shotRest("Sixty-Four-Rest", "64th", 22);
+
+        // notes: enter a note of the given duration (mirrors putRest, note mode)
+        auto shotNote = [&](const char* key, mu::engraving::DurationType dt, size_t idx) {
+            std::vector<mu::engraving::Note*> ns = loadFresh();
+            if (idx >= ns.size()) {
+                return;
+            }
+            const muse::RectF r = ns[idx]->chord()->canvasBoundingRect();
+            auto ni = currentNotation()->interaction()->noteInput();
+            const bool wasActive = ni->isNoteInputMode();
+            if (!wasActive) {
+                ni->startNoteInput();
+            }
+            ni->setDuration(dt);
+            ni->putNote(muse::PointF(scx(ns[idx]), scy(ns[idx])), false, false);
+            if (!wasActive) {
+                ni->endNoteInput();
+            }
+            currentNotationScore()->doLayout();
+            box(key, r);
+            renderPng(dir + "/" + QString::fromUtf8(key) + ".png");
+        };
+        shotNote("Whole-Note", mu::engraving::DurationType::V_WHOLE, 0);
+        shotNote("Half-Note", mu::engraving::DurationType::V_HALF, 4);
+        shotNote("Quarter-Note", mu::engraving::DurationType::V_QUARTER, 8);
+        shotNote("Eighth-Note", mu::engraving::DurationType::V_EIGHTH, 12);
+        shotNote("Sixteenth-Note", mu::engraving::DurationType::V_16TH, 16);
+        shotNote("Thirty-Two-Note", mu::engraving::DurationType::V_32ND, 20);
+        shotNote("Sixty-Four-Note", mu::engraving::DurationType::V_64TH, 23);
 
         QJsonObject root;
         root["boxes"] = boxes;
