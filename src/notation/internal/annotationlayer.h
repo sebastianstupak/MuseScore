@@ -101,6 +101,12 @@ public:
     // changes. Not fired by read()/makeDefault() (those are load-time, not edits).
     muse::async::Notification changed() const { return m_changed; }
 
+    // Noise reduction applied to a COPY of a stroke's points before the
+    // display spline is fitted. Public and static so it can be tested on its
+    // own: it is the part that got a sparse stroke badly wrong, by moving a
+    // deliberate vertex 141px, and a test for it needs no Painter.
+    static std::vector<muse::PointF> smoothForDisplay(const std::vector<muse::PointF>& in, double maxGap);
+
 private:
     struct Stroke {
         std::vector<muse::PointF> points;   // absolute canvas coords, valid in the layout at draw/save time

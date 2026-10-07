@@ -296,6 +296,44 @@ void AnnotationLayer::recomputeAnchorsIfNeeded()
     }
 }
 
+std::vector<muse::PointF> AnnotationLayer::smoothForDisplay(const std::vector<muse::PointF>& in, double maxGap)
+{
+    const size_t n = in.size();
+    if (n < 3) {
+        return in;
+    }
+    // Averaging cancels pixel-quantisation noise, which only exists when
+    // consecutive samples are a pixel or two apart. Applied to SPARSE samples
+    // it does something else entirely: it moves them. A three-point right
+    // angle had its only interior point -- the vertex -- displaced by 141px,
+    // because the mean of the three corners of a right angle is nowhere near
+    // the corner. The ink then missed the path the pen took, which is the one
+    // thing this layer must never do. Measured on the device; this gate is
+    // why the fix needed a second round.
+    //
+    // So a point is averaged only when BOTH its neighbours are close enough
+    // that the gap can only be sampling rate rather than intent. Deliberate
+    // geometry is left exactly where it was drawn.
+    const double maxGapSq = maxGap * maxGap;
+    std::vector<muse::PointF> out = in;
+    for (size_t i = 1; i + 1 < n; ++i) {
+        const muse::PointF& a = in[i - 1];
+        const muse::PointF& b = in[i];
+        const muse::PointF& c = in[i + 1];
+        const double dax = b.x() - a.x(), day = b.y() - a.y();
+        const double dcx = c.x() - b.x(), dcy = c.y() - b.y();
+        if (dax * dax + day * day > maxGapSq || dcx * dcx + dcy * dcy > maxGapSq) {
+            continue;   // sparse here: leave it where the pen was
+        }
+        // Weighted toward the point itself (1:2:1, not 1:1:1): enough to
+        // cancel a one-pixel wobble, not enough to visibly round what was
+        // deliberately drawn.
+        out[i] = muse::PointF((a.x() + 2.0 * b.x() + c.x()) / 4.0,
+                              (a.y() + 2.0 * b.y() + c.y()) / 4.0);
+    }
+    return out;
+}
+
 void AnnotationLayer::drawStroke(muse::draw::Painter* painter, const Stroke& stroke) const
 {
     const size_t n = stroke.points.size();
@@ -315,27 +353,13 @@ void AnnotationLayer::drawStroke(muse::draw::Painter* painter, const Stroke& str
         return;
     }
 
-    // Smooth a COPY for drawing; never the stored points.
-    //
-    // A digitiser quantises to the pixel, so a slow stroke arrives as a
-    // one-pixel zigzag around the line the hand actually drew. An
-    // interpolating spline faithfully reproduces that zigzag as visible
-    // waviness -- it would pass through every wobble on purpose. A three-
-    // point moving average over the interior attenuates that noise while
-    // leaving real curvature alone, because real curvature is spread over
-    // many samples and the noise is not.
-    //
-    // The endpoints are held fixed: they are where the pen landed and lifted,
-    // and dragging them inward visibly shortens the stroke.
-    std::vector<muse::PointF> pts(n);
-    pts[0] = muse::PointF(stroke.points[0].x() + tx, stroke.points[0].y() + ty);
-    pts[n - 1] = muse::PointF(stroke.points[n - 1].x() + tx, stroke.points[n - 1].y() + ty);
-    for (size_t i = 1; i + 1 < n; ++i) {
-        const muse::PointF& a = stroke.points[i - 1];
-        const muse::PointF& b = stroke.points[i];
-        const muse::PointF& c = stroke.points[i + 1];
-        pts[i] = muse::PointF((a.x() + b.x() + c.x()) / 3.0 + tx,
-                              (a.y() + b.y() + c.y()) / 3.0 + ty);
+    // Smooth a COPY for drawing; never the stored points. See
+    // smoothForDisplay() for what it does and the sparse-stroke trap it has
+    // to avoid.
+    const double sp = spatium() > 0.0 ? spatium() : 10.0;
+    std::vector<muse::PointF> pts = smoothForDisplay(stroke.points, sp * 0.5);
+    for (muse::PointF& p : pts) {
+        p = muse::PointF(p.x() + tx, p.y() + ty);
     }
 
     auto at = [&](size_t i) { return pts[i < n ? i : n - 1]; };

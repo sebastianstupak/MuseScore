@@ -166,6 +166,47 @@ TEST_F(Notation_AnnotationLayerTests, RealMovesAreAllKept)
     EXPECT_EQ(pts.size(), size_t(4));
 }
 
+TEST_F(Notation_AnnotationLayerTests, SmoothingLeavesSparsePointsAlone)
+{
+    // The bug this test exists for: a three-point right angle had its only
+    // interior point -- the vertex -- moved 141px, because an unconditional
+    // three-point mean of the corners of a right angle lands nowhere near
+    // the corner. On the device the ink simply missed the path the pen took.
+    const std::vector<PointF> in { PointF(0, 0), PointF(300, 0), PointF(300, 300) };
+    const std::vector<PointF> out = AnnotationLayer::smoothForDisplay(in, 40.0);
+
+    ASSERT_EQ(out.size(), in.size());
+    EXPECT_DOUBLE_EQ(out[1].x(), 300.0);   // the vertex has not moved
+    EXPECT_DOUBLE_EQ(out[1].y(), 0.0);
+}
+
+TEST_F(Notation_AnnotationLayerTests, SmoothingPullsInDenseWobble)
+{
+    // The negative control. Without it, smoothForDisplay() could simply
+    // return its input unchanged and the test above would still pass, while
+    // the digitiser's one-pixel zigzag went on being faithfully reproduced
+    // as visible waviness -- the thing the smoothing is for.
+    const std::vector<PointF> in { PointF(0, 0), PointF(10, 4), PointF(20, 0) };
+    const std::vector<PointF> out = AnnotationLayer::smoothForDisplay(in, 40.0);
+
+    ASSERT_EQ(out.size(), in.size());
+    EXPECT_DOUBLE_EQ(out[1].x(), 10.0);   // along the stroke: unchanged
+    EXPECT_DOUBLE_EQ(out[1].y(), 2.0);    // across it: the wobble is halved
+}
+
+TEST_F(Notation_AnnotationLayerTests, SmoothingNeverMovesTheEnds)
+{
+    // The ends are where the pen landed and lifted. Pulling them inward
+    // shortens the stroke visibly, and repeatedly.
+    const std::vector<PointF> in { PointF(0, 0), PointF(10, 4), PointF(20, 0) };
+    const std::vector<PointF> out = AnnotationLayer::smoothForDisplay(in, 40.0);
+
+    EXPECT_DOUBLE_EQ(out.front().x(), 0.0);
+    EXPECT_DOUBLE_EQ(out.front().y(), 0.0);
+    EXPECT_DOUBLE_EQ(out.back().x(), 20.0);
+    EXPECT_DOUBLE_EQ(out.back().y(), 0.0);
+}
+
 TEST_F(Notation_AnnotationLayerTests, StoredPointsAreNotSmoothed)
 {
     // Smoothing is a RENDERING step (drawStroke averages a copy before
