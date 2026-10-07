@@ -51,6 +51,8 @@
 #include "engraving/dom/articulation.h"
 #include "engraving/dom/arpeggio.h"
 #include "engraving/dom/spanner.h"
+#include "engraving/dom/accidental.h"
+#include "engraving/dom/notedot.h"
 #include "engraving/types/symid.h"
 #include "engraving/api/v1/qmlpluginapi.h"
 #include "project/inotationproject.h"
@@ -1375,7 +1377,14 @@ void NotationActionController::runStylusSelfTest()
             mu::engraving::apiv1::PluginAPI api2(iocContext());
             api2.applyArticulation(QString::fromUtf8(name), scx(ns[idx]), scy(ns[idx]));
             currentNotationScore()->doLayout();
-            box(name, ns[idx]->chord()->canvasBoundingRect());
+            // Anchor to the articulation glyph itself (small, above/below the note), not
+            // the whole chord box -- otherwise the overlay is sized to the note+stem.
+            muse::RectF r = ns[idx]->chord()->canvasBoundingRect();
+            const auto& arts = ns[idx]->chord()->articulations();
+            if (!arts.empty() && arts.back()) {
+                r = arts.back()->canvasBoundingRect();
+            }
+            box(name, r);
             renderPng(dir + "/" + QString::fromUtf8(name) + ".png");
         };
         auto shotSpan = [&](const char* name, size_t a, size_t b) {
@@ -1557,6 +1566,123 @@ void NotationActionController::runStylusSelfTest()
         shotNote("Sixteenth-Note", mu::engraving::DurationType::V_16TH, 16);
         shotNote("Thirty-Two-Note", mu::engraving::DurationType::V_32ND, 20);
         shotNote("Sixty-Four-Note", mu::engraving::DurationType::V_64TH, 23);
+
+        // ---------- Composite cases: chords, adding to a chord, compound note, passage ----------
+        // Sub-element boxes are named "<render>.<part>" so the dashboard can overlay each
+        // input gesture on the exact note/symbol it produced.
+        auto boxN = [&](const QString& name, const muse::RectF& r) {
+            QJsonObject o;
+            o["name"] = name;
+            o["x"] = r.x();
+            o["y"] = r.y();
+            o["w"] = r.width();
+            o["h"] = r.height();
+            boxes.append(o);
+        };
+        auto selectNote = [&](mu::engraving::Note* n) {
+            currentNotation()->interaction()->select({ n });
+        };
+        auto addInterval = [&](int iv) {
+            currentNotation()->interaction()->addIntervalToSelectedNotes(iv);
+        };
+
+        // Enter a clean single note (replacing whatever chord sits at the beat), returning
+        // it so chord/compound demos start from one note rather than the hymn's SATB chords.
+        auto enterSingleNote = [&](size_t idx, mu::engraving::DurationType dt) -> mu::engraving::Note* {
+            std::vector<mu::engraving::Note*> ns = loadFresh();
+            if (idx >= ns.size()) {
+                return nullptr;
+            }
+            const muse::PointF pt(scx(ns[idx]), scy(ns[idx]));
+            auto ni = currentNotation()->interaction()->noteInput();
+            ni->startNoteInput();
+            ni->setDuration(dt);
+            ni->putNote(pt, true, false); // replace -> a single note at this beat
+            ni->endNoteInput();
+            currentNotationScore()->doLayout();
+            mu::engraving::EngravingItem* sel = currentNotationScore()->selection().element();
+            return (sel && sel->isNote()) ? static_cast<mu::engraving::Note*>(sel) : nullptr;
+        };
+
+        // Build a triad one note at a time: single note, + third, + fifth.
+        {
+            mu::engraving::Note* root = enterSingleNote(8, mu::engraving::DurationType::V_QUARTER);
+            if (root) {
+                boxN("chord1", root->chord()->canvasBoundingRect());
+                boxN("chord1.n0", root->canvasBoundingRect());
+                renderPng(dir + "/chord1.png");
+
+                selectNote(root);
+                addInterval(3);
+                currentNotationScore()->doLayout();
+                mu::engraving::Chord* c2 = root->chord();
+                boxN("chord2", c2->canvasBoundingRect());
+                for (mu::engraving::Note* n : c2->notes()) {
+                    boxN(n == root ? "chord2.n0" : "chord2.n1", n->canvasBoundingRect());
+                }
+                renderPng(dir + "/chord2.png");
+
+                selectNote(root);
+                addInterval(5);
+                currentNotationScore()->doLayout();
+                mu::engraving::Chord* c3 = root->chord();
+                boxN("chord3", c3->canvasBoundingRect());
+                int i = 0;
+                for (mu::engraving::Note* n : c3->notes()) {
+                    boxN(QString("chord3.n%1").arg(i++), n->canvasBoundingRect());
+                }
+                renderPng(dir + "/chord3.png");
+            }
+        }
+
+        // Compound: layer an accidental, an articulation and an augmentation dot on one note.
+        {
+            mu::engraving::Note* n = enterSingleNote(10, mu::engraving::DurationType::V_QUARTER);
+            if (n) {
+                mu::engraving::apiv1::PluginAPI api2(iocContext());
+                api2.dropSingle("sharp", scx(n), scy(n));
+                api2.applyArticulation("staccato", scx(n), scy(n));
+                currentNotationScore()->doLayout();
+                const muse::RectF nr = n->canvasBoundingRect();
+                api2.dropSingle("dot", nr.x() + nr.width() + 2.0, nr.y() + nr.height() / 2.0);
+                currentNotationScore()->doLayout();
+                mu::engraving::Chord* ch = n->chord();
+                boxN("compound", ch->canvasBoundingRect());
+                boxN("compound.note", n->canvasBoundingRect());
+                if (n->accidental()) {
+                    boxN("compound.sharp", n->accidental()->canvasBoundingRect());
+                }
+                const auto& arts = ch->articulations();
+                if (!arts.empty() && arts.back()) {
+                    boxN("compound.staccato", arts.back()->canvasBoundingRect());
+                }
+                if (!n->dots().empty() && n->dots().back()) {
+                    boxN("compound.dot", n->dots().back()->canvasBoundingRect());
+                }
+                renderPng(dir + "/compound.png");
+            }
+        }
+
+        // Passage: a short complex excerpt -- a chord, a slur, a crescendo and a staccato
+        // applied to the opening notes, rendered together.
+        {
+            std::vector<mu::engraving::Note*> ns = loadFresh();
+            if (ns.size() > 6) {
+                selectNote(ns[0]);
+                addInterval(3);
+                mu::engraving::apiv1::PluginAPI api2(iocContext());
+                api2.applySpan("slur", scx(ns[0]), scy(ns[0]), scx(ns[3]), scy(ns[3]));
+                api2.applySpan("crescendo", scx(ns[1]), scy(ns[1]), scx(ns[5]), scy(ns[5]));
+                api2.applyArticulation("staccato", scx(ns[2]), scy(ns[2]));
+                currentNotationScore()->doLayout();
+                muse::RectF pr = ns[0]->canvasBoundingRect();
+                for (size_t i = 1; i <= 6 && i < ns.size(); ++i) {
+                    pr = uni(pr, ns[i]->canvasBoundingRect());
+                }
+                boxN("passage", pr);
+                renderPng(dir + "/passage.png");
+            }
+        }
 
         QJsonObject root;
         root["boxes"] = boxes;
