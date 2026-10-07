@@ -106,6 +106,35 @@ Ret FileSystem::copy(const io::path_t& src, const io::path_t& dst, bool replace)
             return make_ret(Err::FSAlreadyExists);
         }
 
+        //! NOTE For a plain file, do not delete what we are replacing until
+        //! the new copy exists. Deleting first means any failure during the
+        //! copy destroys the file the user asked us to overwrite -- which is
+        //! how a failed save used to take the score with it. Copy to a
+        //! sibling temp first, then swap it in, so a failure is a no-op.
+        if (!srcFileInfo.isDir()) {
+            const io::path_t tmpDst = dst + ".copying";
+            remove(tmpDst);
+
+            Ret ret = copyRecursively(src, tmpDst);
+            if (!ret) {
+                remove(tmpDst);
+                return ret;
+            }
+
+            ret = remove(dst);
+            if (!ret) {
+                remove(tmpDst);
+                return ret;
+            }
+
+            if (!QFile::rename(tmpDst.toQString(), dst.toQString())) {
+                LOGE() << "Failed to move " << tmpDst << " into place at " << dst;
+                return make_ret(Err::FSCopyError);
+            }
+
+            return make_ok();
+        }
+
         Ret ret = remove(dst);
         if (!ret) {
             return ret;
@@ -376,6 +405,53 @@ Ret FileSystem::removeDir(const io::path_t& path, const bool onlyIfEmpty)
     return make_ok();
 }
 
+//! NOTE QFile::copy uses the kernel's fast copy paths (copy_file_range, then
+//! an O_TMPFILE destination it reflinks into place with FICLONE). On some
+//! Android kernels with f2fs both are refused and Qt reports failure without
+//! ever trying a portable copy. The caller has already deleted the file it is
+//! replacing by then, so a failure here destroys the user's score. Do the
+//! plain read/write copy ourselves when Qt gives up.
+static bool copyFileContents(const QString& srcPath, const QString& dstPath)
+{
+    QFile src(srcPath);
+    if (!src.open(QIODevice::ReadOnly)) {
+        LOGE() << "Failed to open source for copy: " << srcPath << ", " << src.errorString();
+        return false;
+    }
+
+    QFile dst(dstPath);
+    if (!dst.open(QIODevice::WriteOnly | QIODevice::Truncate)) {
+        LOGE() << "Failed to open destination for copy: " << dstPath << ", " << dst.errorString();
+        return false;
+    }
+
+    char buf[64 * 1024];
+    while (true) {
+        const qint64 got = src.read(buf, sizeof(buf));
+        if (got < 0) {
+            LOGE() << "Read failed while copying " << srcPath << ", " << src.errorString();
+            return false;
+        }
+        if (got == 0) {
+            break;
+        }
+        if (dst.write(buf, got) != got) {
+            LOGE() << "Write failed while copying to " << dstPath << ", " << dst.errorString();
+            return false;
+        }
+    }
+
+    // Flush to the filesystem before we report success: the caller may be
+    // about to tell the user their score is safely saved.
+    if (!dst.flush()) {
+        LOGE() << "Flush failed while copying to " << dstPath << ", " << dst.errorString();
+        return false;
+    }
+    dst.close();
+
+    return true;
+}
+
 Ret FileSystem::copyRecursively(const io::path_t& src, const io::path_t& dst) const
 {
     QString srcPath = src.toQString();
@@ -400,7 +476,12 @@ Ret FileSystem::copyRecursively(const io::path_t& src, const io::path_t& dst) co
         }
     } else {
         if (!QFile::copy(srcPath, dstPath)) {
-            return make_ret(Err::FSCopyError);
+            // Qt's fast paths can fail on filesystems that refuse them; a
+            // partial destination may be left behind, so clear it first.
+            QFile::remove(dstPath);
+            if (!copyFileContents(srcPath, dstPath)) {
+                return make_ret(Err::FSCopyError);
+            }
         }
     }
 
