@@ -32,6 +32,7 @@
 #include "engraving/dom/masterscore.h"
 #include "engraving/dom/note.h"
 #include "engraving/dom/chord.h"
+#include "engraving/dom/page.h"
 #include "engraving/dom/text.h"
 #include "engraving/dom/sig.h"
 #include "engraving/editing/noteinput.h"
@@ -39,6 +40,10 @@
 // Stylus apply self-test ($MUSE_STYLUS_SELFTEST) — drive the real T2 plugin-API.
 #include <QTimer>
 #include <QFile>
+#include <QJsonArray>
+#include <QJsonObject>
+#include <QJsonDocument>
+#include <algorithm>
 #include "engraving/dom/segment.h"
 #include "engraving/dom/measure.h"
 #include "engraving/dom/articulation.h"
@@ -1236,6 +1241,136 @@ void NotationActionController::runStylusSelfTest()
     }
     m_stylusSelfTestDone = true;
     LOGI() << "STYLUSSELFTEST: score ready (" << notes.size() << " notes), applying markings";
+
+    // Per-element render mode ($NEUME_ELEMENT_SHOTS=<dir>): render ONE marking per PNG in
+    // real score context. Reload a FRESH copy of the score for each element (clean,
+    // isolated — the applies don't reliably undo) then apply, re-layout, render, and record
+    // a crop box. The layout is identical across reloads, so one page rect fits all boxes.
+    const QByteArray shotsDir = qgetenv("NEUME_ELEMENT_SHOTS");
+    if (!shotsDir.isEmpty()) {
+        const QString dir = QString::fromUtf8(shotsDir);
+        const QByteArray scorePath = qgetenv("MUSE_STYLUS_SELFTEST_SCORE");
+        auto scx = [](mu::engraving::Note* n) { const muse::RectF r = n->canvasBoundingRect(); return r.x() + r.width() / 2.0; };
+        auto scy = [](mu::engraving::Note* n) { const muse::RectF r = n->canvasBoundingRect(); return r.y() + r.height() / 2.0; };
+        auto loadFresh = [&]() -> std::vector<mu::engraving::Note*> {
+            std::vector<mu::engraving::Note*> ns;
+            project::INotationProjectPtr prj = projectCreator()->newProject(iocContext());
+            if (!prj || !prj->load(muse::io::path_t(QString::fromUtf8(scorePath)))) {
+                return ns;
+            }
+            globalContext()->setCurrentProject(prj);
+            mu::engraving::Score* s = currentNotationScore();
+            if (!s) {
+                return ns;
+            }
+            s->doLayout();
+            for (mu::engraving::Measure* m = s->firstMeasure(); m && ns.size() < 24; m = m->nextMeasure()) {
+                for (mu::engraving::Segment* seg = m->first(mu::engraving::SegmentType::ChordRest); seg;
+                     seg = seg->next(mu::engraving::SegmentType::ChordRest)) {
+                    for (mu::engraving::EngravingItem* e : seg->elist()) {
+                        if (e && e->isChord() && !mu::engraving::toChord(e)->notes().empty()) {
+                            ns.push_back(mu::engraving::toChord(e)->upNote());
+                        }
+                    }
+                }
+            }
+            return ns;
+        };
+        auto renderPng = [&](const QString& path) {
+            mu::iex::imagesexport::PngWriter writer;
+            auto b = muse::io::Buffer::opened(muse::io::IODevice::WriteOnly);
+            const project::INotationWriter::Options o { { project::INotationWriter::OptionKey::PAGE_NUMBER, muse::Val(0) } };
+            b.setMeta("file_path", path.toStdString());
+            const muse::Ret r = writer.write(currentNotation(), b, o);
+            b.close();
+            if (r) {
+                muse::io::File::writeFile(muse::io::path_t(path), b.data());
+            }
+        };
+        QJsonArray boxes;
+        auto box = [&](const char* name, const muse::RectF& r) {
+            QJsonObject o;
+            o["name"] = QString::fromUtf8(name);
+            o["x"] = r.x();
+            o["y"] = r.y();
+            o["w"] = r.width();
+            o["h"] = r.height();
+            boxes.append(o);
+        };
+        auto uni = [](const muse::RectF& a, const muse::RectF& b) {
+            const double x0 = std::min(a.x(), b.x());
+            const double y0 = std::min(a.y(), b.y());
+            const double x1 = std::max(a.x() + a.width(), b.x() + b.width());
+            const double y1 = std::max(a.y() + a.height(), b.y() + b.height());
+            return muse::RectF(x0, y0, x1 - x0, y1 - y0);
+        };
+        auto shotArtic = [&](const char* name, size_t idx) {
+            std::vector<mu::engraving::Note*> ns = loadFresh();
+            if (idx >= ns.size()) {
+                return;
+            }
+            mu::engraving::apiv1::PluginAPI api2(iocContext());
+            api2.applyArticulation(QString::fromUtf8(name), scx(ns[idx]), scy(ns[idx]));
+            currentNotationScore()->doLayout();
+            box(name, ns[idx]->chord()->canvasBoundingRect());
+            renderPng(dir + "/" + QString::fromUtf8(name) + ".png");
+        };
+        auto shotSpan = [&](const char* name, size_t a, size_t b) {
+            std::vector<mu::engraving::Note*> ns = loadFresh();
+            if (a >= ns.size() || b >= ns.size()) {
+                return;
+            }
+            mu::engraving::apiv1::PluginAPI api2(iocContext());
+            api2.applySpan(QString::fromUtf8(name), scx(ns[a]), scy(ns[a]), scx(ns[b]), scy(ns[b]));
+            currentNotationScore()->doLayout();
+            box(name, uni(ns[a]->canvasBoundingRect(), ns[b]->canvasBoundingRect()));
+            renderPng(dir + "/" + QString::fromUtf8(name) + ".png");
+        };
+        shotArtic("accent", 0);
+        shotArtic("tenuto", 2);
+        shotArtic("marcato", 4);
+        shotArtic("fermata", 6);
+        shotArtic("staccato", 8);
+        shotArtic("trill", 10);
+        shotArtic("mordent", 12);
+        shotArtic("turn", 14);
+        shotArtic("caesura", 16);
+        shotSpan("slur", 1, 3);
+        shotSpan("crescendo", 5, 9);
+        shotSpan("diminuendo", 11, 15);
+        shotSpan("pedal", 17, 21);
+        shotSpan("glissando", 2, 4);
+        shotSpan("volta", 19, 23);
+        {
+            std::vector<mu::engraving::Note*> ns = loadFresh();
+            if (ns.size() > 18) {
+                mu::engraving::apiv1::PluginAPI api2(iocContext());
+                api2.applyArpeggio(scx(ns[18]), scy(ns[18]));
+                currentNotationScore()->doLayout();
+                box("arpeggio", ns[18]->chord()->canvasBoundingRect());
+                renderPng(dir + "/arpeggio.png");
+            }
+        }
+        QJsonObject root;
+        root["boxes"] = boxes;
+        mu::engraving::Score* last = currentNotationScore();
+        if (last && !last->pages().empty()) {
+            const muse::RectF pr = last->pages().front()->canvasBoundingRect();
+            QJsonObject p;
+            p["x"] = pr.x();
+            p["y"] = pr.y();
+            p["w"] = pr.width();
+            p["h"] = pr.height();
+            root["page"] = p;
+        }
+        QFile jf(dir + "/boxes.json");
+        if (jf.open(QIODevice::WriteOnly)) {
+            jf.write(QJsonDocument(root).toJson(QJsonDocument::Compact));
+            jf.close();
+        }
+        LOGI() << "STYLUSSELFTEST wrote element shots to " << shotsDir.constData();
+        return;
+    }
 
     // Drive the REAL stylus T2 methods (same code the plugin calls), at actual note
     // canvas positions, and assert each marking landed on the CORRECT note.
