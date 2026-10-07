@@ -1684,6 +1684,49 @@ void NotationActionController::runStylusSelfTest()
             }
         }
 
+        // Placement: the SAME accidental gesture attaches to a DIFFERENT chord note
+        // depending on where it is drawn. Rebuild a triad and drop a sharp at each note
+        // in turn; emit the drawn position, the resulting accidental and the note it hit,
+        // so the dashboard can show input position -> which note it is assigned to.
+        for (int k = 0; k < 3; ++k) {
+            mu::engraving::Note* root2 = enterSingleNote(8, mu::engraving::DurationType::V_QUARTER);
+            if (!root2) {
+                continue;
+            }
+            // Spread the chord over an octave (root + fifth + octave) so the three notes
+            // are clearly separated and it is obvious which one the accidental lands on.
+            selectNote(root2);
+            addInterval(5);
+            currentNotationScore()->doLayout();
+            selectNote(root2);
+            addInterval(8);
+            currentNotationScore()->doLayout();
+            mu::engraving::Chord* ch = root2->chord();
+            const std::vector<mu::engraving::Note*>& cn = ch->notes();
+            if (static_cast<size_t>(k) >= cn.size()) {
+                continue;
+            }
+            mu::engraving::Note* target = cn[k]; // bottom .. top
+            const double dx = scx(target);
+            const double dy = scy(target);
+            mu::engraving::apiv1::PluginAPI api2(iocContext());
+            api2.dropSingle("sharp", dx, dy);
+            currentNotationScore()->doLayout();
+            const QString key = QString("place%1").arg(k);
+            boxN(key, ch->canvasBoundingRect());
+            // where the gesture was drawn: to the LEFT of the target note (where an
+            // accidental is written), vertically centred on it.
+            const muse::RectF nb = target->canvasBoundingRect();
+            const double gs = nb.height() * 1.5;
+            boxN(key + ".drawn", muse::RectF(nb.x() - gs * 0.95, nb.y() + nb.height() / 2.0 - gs / 2.0, gs, gs));
+            // the note the accidental was assigned to, and the engraved accidental
+            boxN(key + ".note", target->canvasBoundingRect());
+            if (target->accidental()) {
+                boxN(key + ".acc", target->accidental()->canvasBoundingRect());
+            }
+            renderPng(dir + "/" + key + ".png");
+        }
+
         QJsonObject root;
         root["boxes"] = boxes;
         mu::engraving::Score* last = currentNotationScore();
