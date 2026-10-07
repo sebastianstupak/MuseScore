@@ -37,6 +37,10 @@
 #include "engraving/dom/system.h"
 #include "engraving/style/style.h"
 
+#include <vector>
+
+#include "draw/types/painterpath.h"
+
 // NOTE (4.7 port): engraving/editing/transaction/{transaction,undoablecommand}.h
 // do not exist on 4.7 -- the Transaction/UndoableCommand framework is new in 5.0.
 // See endUndoableEdit() below for what that costs here.
@@ -90,9 +94,37 @@ void AnnotationLayer::beginStroke(const muse::PointF& logicalPos)
 
 void AnnotationLayer::appendPoint(const muse::PointF& logicalPos)
 {
-    if (m_drawing) {
-        m_current.points.push_back(logicalPos);
+    if (!m_drawing) {
+        return;
     }
+    // Drop samples that land almost on top of the previous one.
+    //
+    // The pointer delivers far more points than the stroke has shape, and the
+    // surplus is not detail -- it is jitter around a nib that is physically
+    // still. Kept, it makes the smoothed curve wobble between samples that
+    // disagree by a fraction of a pixel, and it bloats what the recognizer
+    // has to chew on.
+    //
+    // The threshold is in score units scaled by spatium, so it means the same
+    // thing at every zoom: a stroke drawn at 400% must not come out smoother
+    // than the same stroke at 50%.
+    if (!m_current.points.empty()) {
+        const muse::PointF& last = m_current.points.back();
+        const double dx = logicalPos.x() - last.x();
+        const double dy = logicalPos.y() - last.y();
+        // 0.04 spatium is well under a screen pixel at any usable zoom
+        // (spatium is ~83 internal units here, DPI 1200), so this removes
+        // repeats and sub-pixel noise and nothing a person drew. Smoothing
+        // proper happens at render time -- see drawStroke -- precisely so
+        // that the STORED points stay exactly where the pen was: the
+        // recognizer reads them, and so do the tests.
+        const double sp = spatium() > 0.0 ? spatium() : 10.0;
+        const double minStep = sp * 0.04;
+        if (dx * dx + dy * dy < minStep * minStep) {
+            return;
+        }
+    }
+    m_current.points.push_back(logicalPos);
 }
 
 void AnnotationLayer::endStroke()
@@ -266,17 +298,82 @@ void AnnotationLayer::recomputeAnchorsIfNeeded()
 
 void AnnotationLayer::drawStroke(muse::draw::Painter* painter, const Stroke& stroke) const
 {
-    if (stroke.points.size() < 2) {
+    const size_t n = stroke.points.size();
+    if (n < 2) {
         return;
     }
     painter->setPen(Pen(stroke.color, stroke.width, PenStyle::SolidLine, PenCapStyle::RoundCap, PenJoinStyle::RoundJoin));
+    painter->setBrush(BrushStyle::NoBrush);
+
     const double tx = stroke.xlate.x();
     const double ty = stroke.xlate.y();
-    for (size_t i = 1; i < stroke.points.size(); ++i) {
+
+    if (n == 2) {
+        const muse::PointF& a = stroke.points[0];
+        const muse::PointF& b = stroke.points[1];
+        painter->drawLine(LineF(a.x() + tx, a.y() + ty, b.x() + tx, b.y() + ty));
+        return;
+    }
+
+    // Smooth a COPY for drawing; never the stored points.
+    //
+    // A digitiser quantises to the pixel, so a slow stroke arrives as a
+    // one-pixel zigzag around the line the hand actually drew. An
+    // interpolating spline faithfully reproduces that zigzag as visible
+    // waviness -- it would pass through every wobble on purpose. A three-
+    // point moving average over the interior attenuates that noise while
+    // leaving real curvature alone, because real curvature is spread over
+    // many samples and the noise is not.
+    //
+    // The endpoints are held fixed: they are where the pen landed and lifted,
+    // and dragging them inward visibly shortens the stroke.
+    std::vector<muse::PointF> pts(n);
+    pts[0] = muse::PointF(stroke.points[0].x() + tx, stroke.points[0].y() + ty);
+    pts[n - 1] = muse::PointF(stroke.points[n - 1].x() + tx, stroke.points[n - 1].y() + ty);
+    for (size_t i = 1; i + 1 < n; ++i) {
         const muse::PointF& a = stroke.points[i - 1];
         const muse::PointF& b = stroke.points[i];
-        painter->drawLine(LineF(a.x() + tx, a.y() + ty, b.x() + tx, b.y() + ty));
+        const muse::PointF& c = stroke.points[i + 1];
+        pts[i] = muse::PointF((a.x() + b.x() + c.x()) / 3.0 + tx,
+                              (a.y() + b.y() + c.y()) / 3.0 + ty);
     }
+
+    auto at = [&](size_t i) { return pts[i < n ? i : n - 1]; };
+
+    // Centripetal-ish Catmull-Rom through every sample, emitted as cubic
+    // Beziers.
+    //
+    // This replaces a loop of drawLine() between consecutive samples. That
+    // drew exactly what it said: a chain of straight segments with a corner
+    // at every sample, which is why handwriting came out as polylines rather
+    // than curves however carefully it was drawn. The samples were never the
+    // problem; joining them with line segments was.
+    //
+    // Catmull-Rom is the right spline here because it INTERPOLATES: the curve
+    // passes through the points the pen actually visited, so the ink lands
+    // where the nib was. (A B-spline would smooth more but drift away from
+    // the stroke, and the ink has to sit on the notes it is annotating.) The
+    // tangent at each point is the direction of travel through it, so
+    // consecutive segments meet with matching slope and the corner is gone.
+    //
+    // The 1/6 factors are the standard Catmull-Rom -> Bezier conversion for a
+    // uniform parameterisation; the endpoints are duplicated (via `at`'s
+    // clamp) so the first and last segments get a phantom neighbour and bend
+    // the same way as the interior ones.
+    muse::draw::PainterPath path;
+    path.moveTo(at(0));
+    for (size_t i = 0; i + 1 < n; ++i) {
+        const muse::PointF p0 = at(i == 0 ? 0 : i - 1);
+        const muse::PointF p1 = at(i);
+        const muse::PointF p2 = at(i + 1);
+        const muse::PointF p3 = at(i + 2);
+        const muse::PointF c1(p1.x() + (p2.x() - p0.x()) / 6.0,
+                              p1.y() + (p2.y() - p0.y()) / 6.0);
+        const muse::PointF c2(p2.x() - (p3.x() - p1.x()) / 6.0,
+                              p2.y() - (p3.y() - p1.y()) / 6.0);
+        path.cubicTo(c1, c2, p2);
+    }
+    painter->drawPath(path);
 }
 
 void AnnotationLayer::paint(muse::draw::Painter* painter)

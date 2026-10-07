@@ -22,6 +22,8 @@
 
 #include <gtest/gtest.h>
 
+#include <vector>
+
 #include "io/buffer.h"
 
 #include "async/channel.h"
@@ -127,6 +129,61 @@ TEST_F(Notation_AnnotationLayerTests, ShortStrokeIsRejected)
     layer.beginStroke(PointF(10, 10));
     layer.endStroke();
     EXPECT_EQ(layer.strokeCount(), 0);
+}
+
+TEST_F(Notation_AnnotationLayerTests, NearDuplicateSamplesAreDropped)
+{
+    // A pointer reports many samples per second; while the nib is
+    // effectively still, the surplus is quantisation noise rather than
+    // shape. Keeping it makes the rendered curve wobble.
+    AnnotationLayer layer;
+    layer.setScore(m_score);
+
+    layer.beginStroke(PointF(100, 100));
+    layer.appendPoint(PointF(100.5, 100.2));   // sub-pixel: noise
+    layer.appendPoint(PointF(150, 100));       // a real move
+    const std::vector<PointF> pts = layer.takeCurrentStroke();
+
+    ASSERT_EQ(pts.size(), size_t(2));
+    EXPECT_DOUBLE_EQ(pts[1].x(), 150.0);
+}
+
+TEST_F(Notation_AnnotationLayerTests, RealMovesAreAllKept)
+{
+    // The negative control for the test above. If the filter were simply
+    // dropping samples -- or if the threshold were scaled wrongly and came
+    // out huge -- that test would still pass while real strokes lost their
+    // shape. This one fails in that case.
+    AnnotationLayer layer;
+    layer.setScore(m_score);
+
+    layer.beginStroke(PointF(100, 100));
+    layer.appendPoint(PointF(150, 100));
+    layer.appendPoint(PointF(200, 140));
+    layer.appendPoint(PointF(250, 100));
+    const std::vector<PointF> pts = layer.takeCurrentStroke();
+
+    EXPECT_EQ(pts.size(), size_t(4));
+}
+
+TEST_F(Notation_AnnotationLayerTests, StoredPointsAreNotSmoothed)
+{
+    // Smoothing is a RENDERING step (drawStroke averages a copy before
+    // fitting the spline). The stored points must stay exactly where the pen
+    // was: the gesture recognizer reads them, and ink has to be saved and
+    // reloaded unchanged. Smoothing them in place would quietly move every
+    // annotation a little every time it was drawn.
+    AnnotationLayer layer;
+    layer.setScore(m_score);
+
+    layer.beginStroke(PointF(100, 100));
+    layer.appendPoint(PointF(200, 300));   // a sharp corner
+    layer.appendPoint(PointF(300, 100));
+    const std::vector<PointF> pts = layer.takeCurrentStroke();
+
+    ASSERT_EQ(pts.size(), size_t(3));
+    EXPECT_DOUBLE_EQ(pts[1].x(), 200.0);
+    EXPECT_DOUBLE_EQ(pts[1].y(), 300.0);   // not pulled toward its neighbours
 }
 
 TEST_F(Notation_AnnotationLayerTests, EraseRemovesNearbyStroke)
