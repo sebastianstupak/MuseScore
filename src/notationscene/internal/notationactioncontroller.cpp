@@ -1306,6 +1306,67 @@ void NotationActionController::runStylusSelfTest()
             const double y1 = std::max(a.y() + a.height(), b.y() + b.height());
             return muse::RectF(x0, y0, x1 - x0, y1 - y0);
         };
+        // The box of the actual engraved element after a drop. Clefs, time sigs and
+        // barlines snap far from the drop point (a clef jumps to the staff start), so
+        // the drop-target box is the wrong anchor for the overlay -- scan the measure
+        // for the real glyph on the relevant staff and use its box instead.
+        auto segElemBox = [&](mu::engraving::Measure* m, mu::engraving::staff_idx_t sidx, int kind) -> muse::RectF {
+            // Prefer the rightmost match on the drop staff (a mid-measure clef change
+            // sits at the note's tick, past any header clef at tick 0); if that staff
+            // has none, widen to all staves -- a clef drop lands on whichever staff the
+            // hit resolved to, which isn't always the note's own staff index.
+            auto scan = [&](bool allStaves) -> muse::RectF {
+                muse::RectF best;
+                int bestTick = -1;
+                for (mu::engraving::Segment* s = m ? m->first() : nullptr; s; s = s->next()) {
+                    for (mu::engraving::EngravingItem* e : s->elist()) {
+                        if (!e || (!allStaves && e->staffIdx() != sidx)) {
+                            continue;
+                        }
+                        const bool match = (kind == 0 && e->isClef())
+                                           || (kind == 1 && e->isTimeSig())
+                                           || (kind == 2 && e->isBarLine());
+                        if (match && static_cast<int>(s->tick().ticks()) >= bestTick) {
+                            best = e->canvasBoundingRect();
+                            bestTick = static_cast<int>(s->tick().ticks());
+                        }
+                    }
+                }
+                return best;
+            };
+            muse::RectF r = scan(false);
+            if (r.width() <= 0.0) {
+                r = scan(true);
+            }
+            return r;
+        };
+        // The box of the spanner we just added (by kind + staff), unioned over its
+        // segments: a pedal line renders below the staff and a volta above it, nowhere
+        // near the endpoint notes the drop-target union would anchor to.
+        auto spannerBox = [&](const char* kind, mu::engraving::Note* a) -> muse::RectF {
+            muse::RectF best;
+            bool has = false;
+            const QString k = QString::fromUtf8(kind);
+            const mu::engraving::staff_idx_t sidx = a->staffIdx();
+            for (const auto& kv : currentNotationScore()->spanner()) {
+                mu::engraving::Spanner* sp = kv.second;
+                if (!sp || sp->staffIdx() != sidx) {
+                    continue;
+                }
+                const bool match = (k == "pedal" && sp->isPedal()) || (k == "volta" && sp->isVolta());
+                if (!match) {
+                    continue;
+                }
+                for (auto* seg : sp->spannerSegments()) {
+                    if (!seg) {
+                        continue;
+                    }
+                    best = has ? uni(best, seg->canvasBoundingRect()) : seg->canvasBoundingRect();
+                    has = true;
+                }
+            }
+            return best;
+        };
         auto shotArtic = [&](const char* name, size_t idx) {
             std::vector<mu::engraving::Note*> ns = loadFresh();
             if (idx >= ns.size()) {
@@ -1325,7 +1386,15 @@ void NotationActionController::runStylusSelfTest()
             mu::engraving::apiv1::PluginAPI api2(iocContext());
             api2.applySpan(QString::fromUtf8(name), scx(ns[a]), scy(ns[a]), scx(ns[b]), scy(ns[b]));
             currentNotationScore()->doLayout();
-            box(name, uni(ns[a]->canvasBoundingRect(), ns[b]->canvasBoundingRect()));
+            muse::RectF r = uni(ns[a]->canvasBoundingRect(), ns[b]->canvasBoundingRect());
+            const QString nm = QString::fromUtf8(name);
+            if (nm == "pedal" || nm == "volta") {
+                const muse::RectF sr = spannerBox(name, ns[a]);
+                if (sr.width() > 0.0) {
+                    r = sr;
+                }
+            }
+            box(name, r);
             renderPng(dir + "/" + QString::fromUtf8(name) + ".png");
         };
         shotArtic("accent", 0);
@@ -1373,10 +1442,18 @@ void NotationActionController::runStylusSelfTest()
             if (idx >= ns.size()) {
                 return;
             }
-            const muse::RectF r = ns[idx]->chord()->measure()->canvasBoundingRect();
+            const mu::engraving::staff_idx_t sidx = ns[idx]->staffIdx();
+            const int kind = QString::fromUtf8(element).contains("clef") ? 0 : 2; // else barline
             mu::engraving::apiv1::PluginAPI api2(iocContext());
             api2.dropSingle(QString::fromUtf8(element), scx(ns[idx]), scy(ns[idx]));
             currentNotationScore()->doLayout();
+            // Re-fetch the measure after the drop: a clef drop can recreate the measure,
+            // leaving a before-capture pointer valid but empty of the new glyph.
+            mu::engraving::Measure* m = ns[idx]->chord()->measure();
+            muse::RectF r = segElemBox(m, sidx, kind);
+            if (r.width() <= 0.0) {
+                r = m->canvasBoundingRect();
+            }
             box(key, r);
             renderPng(dir + "/" + QString::fromUtf8(key) + ".png");
         };
@@ -1385,10 +1462,17 @@ void NotationActionController::runStylusSelfTest()
             if (ns.empty()) {
                 return;
             }
-            const muse::RectF r = ns[0]->chord()->measure()->canvasBoundingRect();
+            // Changing the time signature can re-bar (recreate) measures, so capture
+            // only the staff index up front and re-fetch the first measure afterward.
+            const mu::engraving::staff_idx_t sidx = ns[0]->staffIdx();
+            const muse::RectF fallback = ns[0]->chord()->measure()->canvasBoundingRect();
             mu::engraving::apiv1::PluginAPI api2(iocContext());
             api2.putTimeSig(num, den, QString::fromUtf8(sym), scx(ns[0]), scy(ns[0]));
             currentNotationScore()->doLayout();
+            muse::RectF r = segElemBox(currentNotationScore()->firstMeasure(), sidx, 1);
+            if (r.width() <= 0.0) {
+                r = fallback;
+            }
             box(key, r);
             renderPng(dir + "/" + QString::fromUtf8(key) + ".png");
         };
@@ -1417,7 +1501,9 @@ void NotationActionController::runStylusSelfTest()
             renderPng(dir + "/" + QString::fromUtf8(key) + ".png");
         };
 
-        shotDropMeasure("G-Clef", "g_clef", 3);
+        // G-clef on an already-treble staff is a no-op, so anchor to the staff's
+        // existing header G-clef: target a first-measure note so the scan finds it.
+        shotDropMeasure("G-Clef", "g_clef", 1);
         shotDropMeasure("F-Clef", "f_clef", 5);
         shotDropMeasure("C-Clef", "c_clef", 7);
         shotDropNote("Sharp", "sharp", 1);
