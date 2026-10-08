@@ -122,8 +122,11 @@ Item {
     // were repeated on every button and the glyph size was not set at all,
     // so a scale control could only ever have resized empty boxes.
     component ToolBtn: FlatButton {
-        Layout.preferredWidth: root.btn
-        Layout.preferredHeight: root.btn
+        // width/height, not Layout.preferred*: inside a Flow there is no
+        // layout attached to honour those, and every button would collapse
+        // to its implicit size.
+        width: root.btn
+        height: root.btn
         // textFont, NOT font: FlatButton declares `property font iconFont`
         // and `property font textFont`, and has no plain `font`. Assigning
         // to it is not a no-op -- QML refuses to load the component, which
@@ -186,10 +189,23 @@ Item {
         y = Math.max(44, Math.min(y, parent.height - height))   // keep clear of the title bar
     }
 
+    // How far the strip may run before it has to wrap onto another
+    // row/column. At L scale the button column is taller than the panel, so
+    // a single column simply ran off the bottom and the tools at the end --
+    // colour, width, clear -- were unreachable. 44px of clearance at the top
+    // for the title bar, the same at the bottom so the last button is not
+    // flush with the edge.
+    readonly property real maxExtent: !parent ? 1200
+        : (horizontal ? Math.max(240, parent.width - 48)
+                      : Math.max(240, parent.height - 96))
+
     Rectangle {
         id: bg
-        width: content.implicitWidth + 8
-        height: content.implicitHeight + 8
+        // childrenRect, not implicitWidth: after Flow has wrapped, this is
+        // the area actually occupied. implicit* would describe one
+        // unwrapped line and the panel would be the wrong size around it.
+        width: content.childrenRect.width + 8
+        height: content.childrenRect.height + 8
         radius: 8
         color: ui.theme.backgroundPrimaryColor
         border.width: 1
@@ -197,18 +213,27 @@ Item {
 
         MouseArea { anchors.fill: parent }   // absorb clicks on the strip body
 
-        GridLayout {
+        // Flow, not GridLayout. A grid needs to be told how many rows and
+        // columns, and the button count is not fixed -- six of these only
+        // exist while annotating, one only in write mode. Flow wraps on the
+        // bound below whatever is visible at the time.
+        //
+        // The bound is a FIXED number (maxExtent), never derived from the
+        // children: binding the wrap limit to the content that the wrapping
+        // produces is a loop.
+        Flow {
             id: content
-            anchors.centerIn: parent
-            columns: root.horizontal ? -1 : 1
-            rows: root.horizontal ? 1 : -1
-            columnSpacing: root.gap
-            rowSpacing: root.gap
+            x: 4
+            y: 4
+            flow: root.horizontal ? Flow.LeftToRight : Flow.TopToBottom
+            width: root.horizontal ? root.maxExtent : childrenRect.width
+            height: root.horizontal ? childrenRect.height : root.maxExtent
+            spacing: root.gap
 
             // Drag handle
             Rectangle {
-                Layout.preferredWidth: root.horizontal ? 12 : root.btn
-                Layout.preferredHeight: root.horizontal ? root.btn : 12
+                width: root.horizontal ? 12 : root.btn
+                height: root.horizontal ? root.btn : 12
                 color: "transparent"
                 Grid {
                     anchors.centerIn: parent
@@ -237,7 +262,7 @@ Item {
             ToolBtn { icon: IconCode.LOOP; toolTipTitle: qsTrc("notation", "Toggle loop"); onClicked: root.view.dispatchAction("loop") }
             ToolBtn { icon: IconCode.METRONOME; toolTipTitle: qsTrc("notation", "Toggle metronome"); onClicked: root.view.dispatchAction("metronome") }
 
-            Rectangle { Layout.preferredWidth: root.horizontal ? 1 : root.btn; Layout.preferredHeight: root.horizontal ? root.btn : 1; color: ui.theme.strokeColor; opacity: 0.5 }
+            Rectangle { width: root.horizontal ? 1 : root.btn; height: root.horizontal ? root.btn : 1; color: ui.theme.strokeColor; opacity: 0.5 }
 
             // Zoom + view + file
             ToolBtn { icon: IconCode.ZOOM_OUT; toolTipTitle: qsTrc("notation", "Zoom out"); onClicked: root.view.dispatchAction("zoomout") }
@@ -246,7 +271,7 @@ Item {
             ToolBtn { icon: IconCode.SAVE; toolTipTitle: qsTrc("notation", "Save"); onClicked: root.view.dispatchAction("file-save") }
             ToolBtn { text: "PDF"; toolTipTitle: qsTrc("notation", "Export…"); onClicked: root.view.dispatchAction("file-export") }
 
-            Rectangle { Layout.preferredWidth: root.horizontal ? 1 : root.btn; Layout.preferredHeight: root.horizontal ? root.btn : 1; color: ui.theme.strokeColor; opacity: 0.5 }
+            Rectangle { width: root.horizontal ? 1 : root.btn; height: root.horizontal ? root.btn : 1; color: ui.theme.strokeColor; opacity: 0.5 }
 
             // Score-level undo/redo. The ink undo/redo further down only
             // touches annotations; with the note-input bar hidden there is
@@ -266,7 +291,7 @@ Item {
             // this strip.
             ToolBtn { text: "⤢"; toolTipTitle: qsTrc("notation", "Focus mode — hide panels and toolbars"); accentButton: root.focusMode; onClicked: root.setFocusMode(!root.focusMode) }
 
-            Rectangle { Layout.preferredWidth: root.horizontal ? 1 : root.btn; Layout.preferredHeight: root.horizontal ? root.btn : 1; color: ui.theme.strokeColor; opacity: 0.5 }
+            Rectangle { width: root.horizontal ? 1 : root.btn; height: root.horizontal ? root.btn : 1; color: ui.theme.strokeColor; opacity: 0.5 }
 
             // Annotate toggle
             ToolBtn { icon: IconCode.EDIT; toolTipTitle: qsTrc("notation", "Annotate (Ctrl+Alt+A)"); accentButton: root.view.annotationActive; onClicked: root.view.toggleAnnotation() }
@@ -288,7 +313,7 @@ Item {
             // Colour — current swatch, tap cycles the palette
             Rectangle {
                 visible: root.view.annotationActive
-                Layout.preferredWidth: root.btn; Layout.preferredHeight: root.btn
+                width: root.btn; height: root.btn
                 radius: 4
                 color: root.view.annotationColor
                 border.width: 1; border.color: ui.theme.strokeColor
@@ -307,7 +332,7 @@ Item {
             // Width — current dot, tap cycles presets
             Rectangle {
                 visible: root.view.annotationActive
-                Layout.preferredWidth: root.btn; Layout.preferredHeight: root.btn
+                width: root.btn; height: root.btn
                 radius: 4
                 color: "transparent"; border.width: 1; border.color: ui.theme.strokeColor
                 Rectangle {
