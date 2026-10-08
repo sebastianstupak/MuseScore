@@ -1549,6 +1549,19 @@ void AbstractNotationPaintView::dispatchAction(const QString& code)
     dispatcher()->dispatch(code.toStdString());
 }
 
+bool AbstractNotationPaintView::isActionChecked(const QString& code) const
+{
+    return actionsRegister()->actionState(code.toStdString()).checked;
+}
+
+void AbstractNotationPaintView::setActionChecked(const QString& code, bool checked)
+{
+    if (isActionChecked(code) == checked) {
+        return;
+    }
+    dispatcher()->dispatch(code.toStdString());
+}
+
 void AbstractNotationPaintView::toggleViewMode()
 {
     if (!notation()) {

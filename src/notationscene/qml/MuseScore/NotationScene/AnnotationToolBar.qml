@@ -62,6 +62,54 @@ Item {
     // glyphs are hard to read. Scale is user-chosen from the dock menu and
     // multiplies BOTH the button box and the glyph inside it -- scaling the
     // box alone just puts more padding around the same tiny icon.
+    // FOCUS MODE: hide MuseScore's own chrome and work from this strip.
+    //
+    // On a 10" panel the palettes panel alone takes ~27% of the width and
+    // the note-input bar and playback bar another ~190px of height, which
+    // is a lot of furniture around a page you are trying to write on with
+    // a pen. Everything those two bars provide that matters here already
+    // has a button on this strip, so they can go.
+    //
+    // The panels are driven with setActionChecked(), not dispatchAction():
+    // these are TOGGLES, so firing them blind would switch hidden panels
+    // back ON. Restoring puts back exactly what was showing when focus
+    // mode was entered, rather than a guess at a default layout.
+    property bool focusMode: false
+    readonly property var chromeActions: [
+        "toggle-palettes",     // Palettes
+        "toggle-instruments",  // Layout
+        "inspector",           // Properties
+        "toggle-noteinput",    // the note-duration bar across the top
+        "toggle-transport"     // the playback bar
+    ]
+    property var chromeWasOn: ({})
+
+    function setFocusMode(on) {
+        if (!view) {
+            return
+        }
+        if (on) {
+            var was = {}
+            for (var i = 0; i < chromeActions.length; ++i) {
+                var a = chromeActions[i]
+                was[a] = root.view.isActionChecked(a)
+                root.view.setActionChecked(a, false)
+            }
+            chromeWasOn = was
+        } else {
+            for (var k = 0; k < chromeActions.length; ++k) {
+                var c = chromeActions[k]
+                // Default to showing it again if we have no record (focus
+                // mode was on at startup, say) -- leaving the UI emptier
+                // than we found it is the worse failure.
+                var want = (chromeWasOn[c] === undefined) ? true : chromeWasOn[c]
+                root.view.setActionChecked(c, want)
+            }
+        }
+        focusMode = on
+        Qt.callLater(applyDock)
+    }
+
     property real uiScale: 1.0
     readonly property real btn: Math.round(30 * uiScale)
     readonly property int glyph: Math.round(16 * uiScale)
@@ -197,6 +245,26 @@ Item {
             ToolBtn { icon: IconCode.PAGE; toolTipTitle: qsTrc("notation", "Page / continuous view"); onClicked: root.view.toggleViewMode() }
             ToolBtn { icon: IconCode.SAVE; toolTipTitle: qsTrc("notation", "Save"); onClicked: root.view.dispatchAction("file-save") }
             ToolBtn { text: "PDF"; toolTipTitle: qsTrc("notation", "Export…"); onClicked: root.view.dispatchAction("file-export") }
+
+            Rectangle { Layout.preferredWidth: root.horizontal ? 1 : root.btn; Layout.preferredHeight: root.horizontal ? root.btn : 1; color: ui.theme.strokeColor; opacity: 0.5 }
+
+            // Score-level undo/redo. The ink undo/redo further down only
+            // touches annotations; with the note-input bar hidden there is
+            // otherwise no way to undo an actual edit from the strip.
+            // "action://notation/undo", not "undo": that is the code
+            // NotationUiActions actually registers. A bare "undo" is not an
+            // unknown-action error, it is a silent no-op -- the button
+            // would have looked fine and done nothing.
+            ToolBtn { icon: IconCode.UNDO; toolTipTitle: qsTrc("notation", "Undo"); onClicked: root.view.dispatchAction("action://notation/undo") }
+            ToolBtn { icon: IconCode.REDO; toolTipTitle: qsTrc("notation", "Redo"); onClicked: root.view.dispatchAction("action://notation/redo") }
+
+            // Note input, which normally lives in the bar we hide.
+            ToolBtn { text: "N"; toolTipTitle: qsTrc("notation", "Note input (N)"); accentButton: root.view.isActionChecked("note-input"); onClicked: root.view.dispatchAction("note-input") }
+
+            // Focus mode: hide the palettes, Layout, Properties, the
+            // note-input bar and the playback bar, leaving the page and
+            // this strip.
+            ToolBtn { text: "⤢"; toolTipTitle: qsTrc("notation", "Focus mode — hide panels and toolbars"); accentButton: root.focusMode; onClicked: root.setFocusMode(!root.focusMode) }
 
             Rectangle { Layout.preferredWidth: root.horizontal ? 1 : root.btn; Layout.preferredHeight: root.horizontal ? root.btn : 1; color: ui.theme.strokeColor; opacity: 0.5 }
 

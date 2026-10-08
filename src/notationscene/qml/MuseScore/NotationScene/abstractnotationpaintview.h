@@ -128,6 +128,14 @@ public:
 
     // Dispatch a MuseScore action from the pen toolbar (play, zoomin, file-save, ...).
     Q_INVOKABLE void dispatchAction(const QString& code);
+    // Is a toggle action currently ON? The panel actions
+    // (toggle-palettes, toggle-noteinput, ...) are TOGGLES, so a toolbar
+    // that wants to HIDE a panel has to know whether it is showing --
+    // dispatching blind turns hidden panels back on, which is the opposite
+    // of what a "hide the chrome" button is for.
+    Q_INVOKABLE bool isActionChecked(const QString& code) const;
+    // Drive a toggle to a specific state, dispatching only when it differs.
+    Q_INVOKABLE void setActionChecked(const QString& code, bool checked);
     Q_INVOKABLE void toggleViewMode();   // page <-> continuous
 
     Q_INVOKABLE void scrollHorizontal(qreal position);
