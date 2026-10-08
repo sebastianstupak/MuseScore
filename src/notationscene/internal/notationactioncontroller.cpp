@@ -1844,6 +1844,25 @@ void NotationActionController::runStylusSelfTest()
             }
         }
 
+        // Articulated phrase: four different articulations on consecutive notes.
+        {
+            std::vector<mu::engraving::Note*> ns = loadFresh();
+            if (ns.size() > 3) {
+                mu::engraving::apiv1::PluginAPI api2(iocContext());
+                api2.applyArticulation("staccato", scx(ns[0]), scy(ns[0]));
+                api2.applyArticulation("accent", scx(ns[1]), scy(ns[1]));
+                api2.applyArticulation("tenuto", scx(ns[2]), scy(ns[2]));
+                api2.applyArticulation("marcato", scx(ns[3]), scy(ns[3]));
+                currentNotationScore()->doLayout();
+                muse::RectF pr = ns[0]->canvasBoundingRect();
+                for (size_t i = 1; i <= 3 && i < ns.size(); ++i) {
+                    pr = uni(pr, ns[i]->canvasBoundingRect());
+                }
+                boxN("articphrase", pr);
+                renderPng(dir + "/articphrase.png");
+            }
+        }
+
         QJsonObject root;
         root["boxes"] = boxes;
         mu::engraving::Score* last = currentNotationScore();
