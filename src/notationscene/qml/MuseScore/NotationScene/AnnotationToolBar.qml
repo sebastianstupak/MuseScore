@@ -57,9 +57,28 @@ Item {
     x: 420
     y: 180
 
-    readonly property real btn: 30
+    // Toolbar scale. 30px buttons are a mouse size; on a 10" e-ink panel held
+    // at arm's length and tapped with a pen they are small targets and the
+    // glyphs are hard to read. Scale is user-chosen from the dock menu and
+    // multiplies BOTH the button box and the glyph inside it -- scaling the
+    // box alone just puts more padding around the same tiny icon.
+    property real uiScale: 1.0
+    readonly property real btn: Math.round(30 * uiScale)
+    readonly property int glyph: Math.round(16 * uiScale)
+    readonly property real gap: Math.max(2, Math.round(3 * uiScale))
+
     readonly property var palette: ["#1a1a1a", "#e03030", "#2a6be0", "#28a745", "#f0a020", "#a020c0"]
     readonly property var widths: [6, 15, 30]
+
+    // One place that knows how big a tool button is. Without this the sizes
+    // were repeated on every button and the glyph size was not set at all,
+    // so a scale control could only ever have resized empty boxes.
+    component ToolBtn: FlatButton {
+        Layout.preferredWidth: root.btn
+        Layout.preferredHeight: root.btn
+        iconFont.pixelSize: root.glyph
+        font.pixelSize: root.glyph
+    }
 
     // Float over the WHOLE window, not just the canvas.
     Component.onCompleted: {
@@ -125,8 +144,8 @@ Item {
             anchors.centerIn: parent
             columns: root.horizontal ? -1 : 1
             rows: root.horizontal ? 1 : -1
-            columnSpacing: 3
-            rowSpacing: 3
+            columnSpacing: root.gap
+            rowSpacing: root.gap
 
             // Drag handle
             Rectangle {
@@ -154,39 +173,39 @@ Item {
             }
 
             // Playback
-            FlatButton { Layout.preferredWidth: root.btn; Layout.preferredHeight: root.btn; icon: IconCode.PLAY; toolTipTitle: qsTrc("notation", "Play / Pause"); onClicked: root.view.dispatchAction("play") }
-            FlatButton { Layout.preferredWidth: root.btn; Layout.preferredHeight: root.btn; icon: IconCode.STOP; toolTipTitle: qsTrc("notation", "Stop"); onClicked: root.view.dispatchAction("stop") }
-            FlatButton { Layout.preferredWidth: root.btn; Layout.preferredHeight: root.btn; icon: IconCode.REWIND; toolTipTitle: qsTrc("notation", "Rewind to start"); onClicked: root.view.dispatchAction("rewind") }
-            FlatButton { Layout.preferredWidth: root.btn; Layout.preferredHeight: root.btn; icon: IconCode.LOOP; toolTipTitle: qsTrc("notation", "Toggle loop"); onClicked: root.view.dispatchAction("loop") }
-            FlatButton { Layout.preferredWidth: root.btn; Layout.preferredHeight: root.btn; icon: IconCode.METRONOME; toolTipTitle: qsTrc("notation", "Toggle metronome"); onClicked: root.view.dispatchAction("metronome") }
+            ToolBtn { icon: IconCode.PLAY; toolTipTitle: qsTrc("notation", "Play / Pause"); onClicked: root.view.dispatchAction("play") }
+            ToolBtn { icon: IconCode.STOP; toolTipTitle: qsTrc("notation", "Stop"); onClicked: root.view.dispatchAction("stop") }
+            ToolBtn { icon: IconCode.REWIND; toolTipTitle: qsTrc("notation", "Rewind to start"); onClicked: root.view.dispatchAction("rewind") }
+            ToolBtn { icon: IconCode.LOOP; toolTipTitle: qsTrc("notation", "Toggle loop"); onClicked: root.view.dispatchAction("loop") }
+            ToolBtn { icon: IconCode.METRONOME; toolTipTitle: qsTrc("notation", "Toggle metronome"); onClicked: root.view.dispatchAction("metronome") }
 
             Rectangle { Layout.preferredWidth: root.horizontal ? 1 : root.btn; Layout.preferredHeight: root.horizontal ? root.btn : 1; color: ui.theme.strokeColor; opacity: 0.5 }
 
             // Zoom + view + file
-            FlatButton { Layout.preferredWidth: root.btn; Layout.preferredHeight: root.btn; icon: IconCode.ZOOM_OUT; toolTipTitle: qsTrc("notation", "Zoom out"); onClicked: root.view.dispatchAction("zoomout") }
-            FlatButton { Layout.preferredWidth: root.btn; Layout.preferredHeight: root.btn; icon: IconCode.ZOOM_IN; toolTipTitle: qsTrc("notation", "Zoom in"); onClicked: root.view.dispatchAction("zoomin") }
-            FlatButton { Layout.preferredWidth: root.btn; Layout.preferredHeight: root.btn; icon: IconCode.PAGE; toolTipTitle: qsTrc("notation", "Page / continuous view"); onClicked: root.view.toggleViewMode() }
-            FlatButton { Layout.preferredWidth: root.btn; Layout.preferredHeight: root.btn; icon: IconCode.SAVE; toolTipTitle: qsTrc("notation", "Save"); onClicked: root.view.dispatchAction("file-save") }
-            FlatButton { Layout.preferredWidth: root.btn; Layout.preferredHeight: root.btn; text: "PDF"; toolTipTitle: qsTrc("notation", "Export…"); onClicked: root.view.dispatchAction("file-export") }
+            ToolBtn { icon: IconCode.ZOOM_OUT; toolTipTitle: qsTrc("notation", "Zoom out"); onClicked: root.view.dispatchAction("zoomout") }
+            ToolBtn { icon: IconCode.ZOOM_IN; toolTipTitle: qsTrc("notation", "Zoom in"); onClicked: root.view.dispatchAction("zoomin") }
+            ToolBtn { icon: IconCode.PAGE; toolTipTitle: qsTrc("notation", "Page / continuous view"); onClicked: root.view.toggleViewMode() }
+            ToolBtn { icon: IconCode.SAVE; toolTipTitle: qsTrc("notation", "Save"); onClicked: root.view.dispatchAction("file-save") }
+            ToolBtn { text: "PDF"; toolTipTitle: qsTrc("notation", "Export…"); onClicked: root.view.dispatchAction("file-export") }
 
             Rectangle { Layout.preferredWidth: root.horizontal ? 1 : root.btn; Layout.preferredHeight: root.horizontal ? root.btn : 1; color: ui.theme.strokeColor; opacity: 0.5 }
 
             // Annotate toggle
-            FlatButton { Layout.preferredWidth: root.btn; Layout.preferredHeight: root.btn; icon: IconCode.EDIT; toolTipTitle: qsTrc("notation", "Annotate (Ctrl+Alt+A)"); accentButton: root.view.annotationActive; onClicked: root.view.toggleAnnotation() }
+            ToolBtn { icon: IconCode.EDIT; toolTipTitle: qsTrc("notation", "Annotate (Ctrl+Alt+A)"); accentButton: root.view.annotationActive; onClicked: root.view.toggleAnnotation() }
 
             // Write (recognize handwriting -> notation) toggle
-            FlatButton { Layout.preferredWidth: root.btn; Layout.preferredHeight: root.btn; text: "♪"; toolTipTitle: qsTrc("notation", "Write notation (Ctrl+Alt+W)"); accentButton: root.view.writeModeActive; onClicked: root.view.toggleWriteMode() }
+            ToolBtn { text: "♪"; toolTipTitle: qsTrc("notation", "Write notation (Ctrl+Alt+W)"); accentButton: root.view.writeModeActive; onClicked: root.view.toggleWriteMode() }
 
             // Sticky "Shift" for additive lasso (multi-select) — a pen-friendly modifier
-            FlatButton { visible: root.view.writeModeActive; Layout.preferredWidth: root.btn; Layout.preferredHeight: root.btn; text: "⊕"; toolTipTitle: qsTrc("notation", "Add to selection (multi-select loops)"); accentButton: root.view.addToSelectionActive; onClicked: root.view.toggleAddToSelection() }
+            ToolBtn { visible: root.view.writeModeActive; text: "⊕"; toolTipTitle: qsTrc("notation", "Add to selection (multi-select loops)"); accentButton: root.view.addToSelectionActive; onClicked: root.view.toggleAddToSelection() }
 
             // --- Ink tools (only while annotating) ---
-            FlatButton { visible: root.view.annotationActive; Layout.preferredWidth: root.btn; Layout.preferredHeight: root.btn; icon: IconCode.EDIT; toolTipTitle: qsTrc("notation", "Pen (P)"); accentButton: root.view.annotationTool === 0; onClicked: root.view.annotationTool = 0 }
-            FlatButton { visible: root.view.annotationActive; Layout.preferredWidth: root.btn; Layout.preferredHeight: root.btn; icon: IconCode.BRUSH; toolTipTitle: qsTrc("notation", "Highlighter (H)"); accentButton: root.view.annotationTool === 1; onClicked: root.view.annotationTool = 1 }
-            FlatButton { visible: root.view.annotationActive; Layout.preferredWidth: root.btn; Layout.preferredHeight: root.btn; text: "⌫"; toolTipTitle: qsTrc("notation", "Eraser (E)"); accentButton: root.view.annotationTool === 2; onClicked: root.view.annotationTool = 2 }
-            FlatButton { visible: root.view.annotationActive; Layout.preferredWidth: root.btn; Layout.preferredHeight: root.btn; icon: IconCode.UNDO; enabled: root.view.annotationCanUndo; toolTipTitle: qsTrc("notation", "Undo"); onClicked: root.view.annotationUndo() }
-            FlatButton { visible: root.view.annotationActive; Layout.preferredWidth: root.btn; Layout.preferredHeight: root.btn; icon: IconCode.REDO; enabled: root.view.annotationCanRedo; toolTipTitle: qsTrc("notation", "Redo"); onClicked: root.view.annotationRedo() }
-            FlatButton { visible: root.view.annotationActive; Layout.preferredWidth: root.btn; Layout.preferredHeight: root.btn; icon: IconCode.DELETE_TANK; toolTipTitle: qsTrc("notation", "Clear all annotations"); onClicked: root.view.annotationClear() }
+            ToolBtn { visible: root.view.annotationActive; icon: IconCode.EDIT; toolTipTitle: qsTrc("notation", "Pen (P)"); accentButton: root.view.annotationTool === 0; onClicked: root.view.annotationTool = 0 }
+            ToolBtn { visible: root.view.annotationActive; icon: IconCode.BRUSH; toolTipTitle: qsTrc("notation", "Highlighter (H)"); accentButton: root.view.annotationTool === 1; onClicked: root.view.annotationTool = 1 }
+            ToolBtn { visible: root.view.annotationActive; text: "⌫"; toolTipTitle: qsTrc("notation", "Eraser (E)"); accentButton: root.view.annotationTool === 2; onClicked: root.view.annotationTool = 2 }
+            ToolBtn { visible: root.view.annotationActive; icon: IconCode.UNDO; enabled: root.view.annotationCanUndo; toolTipTitle: qsTrc("notation", "Undo"); onClicked: root.view.annotationUndo() }
+            ToolBtn { visible: root.view.annotationActive; icon: IconCode.REDO; enabled: root.view.annotationCanRedo; toolTipTitle: qsTrc("notation", "Redo"); onClicked: root.view.annotationRedo() }
+            ToolBtn { visible: root.view.annotationActive; icon: IconCode.DELETE_TANK; toolTipTitle: qsTrc("notation", "Clear all annotations"); onClicked: root.view.annotationClear() }
 
             // Colour — current swatch, tap cycles the palette
             Rectangle {
@@ -239,8 +258,40 @@ Item {
         id: dockMenu
         visible: root.menuOpen
         z: 10
-        x: root.horizontal ? 0 : (bg.width + 6)
-        y: root.horizontal ? -(height + 6) : 0
+        // Keep the popover ON SCREEN.
+        //
+        // It used to be pinned to one side unconditionally: a vertical strip
+        // put it at x = bg.width + 6, i.e. to the RIGHT of the strip -- and
+        // the strip's default dock is the right edge, so the menu opened
+        // past the edge of the panel and could not be read or tapped. The
+        // horizontal case had the same bug upwards: y = -(height + 6) is
+        // above the strip, which is off the top when docked to the top.
+        //
+        // Flip to the other side when the preferred one does not fit, then
+        // clamp into the parent. Coordinates are relative to root, so the
+        // on-screen position is root.x + x and the limits carry root.x.
+        x: {
+            var pref = root.horizontal ? 0 : (bg.width + 6)
+            if (!root.parent) {
+                return pref
+            }
+            if (!root.horizontal && root.x + pref + width > root.parent.width) {
+                pref = -(width + 6)      // no room right: open to the left
+            }
+            return Math.max(-root.x,
+                            Math.min(pref, root.parent.width - width - root.x))
+        }
+        y: {
+            var pref = root.horizontal ? -(height + 6) : 0
+            if (!root.parent) {
+                return pref
+            }
+            if (root.horizontal && root.y + pref < 0) {
+                pref = bg.height + 6     // no room above: open below
+            }
+            return Math.max(-root.y,
+                            Math.min(pref, root.parent.height - height - root.y))
+        }
         width: menuCol.implicitWidth + 12
         height: menuCol.implicitHeight + 12
         radius: 6
@@ -272,6 +323,32 @@ Item {
                         if (root.dockEdge === "top" || root.dockEdge === "bottom") { root.dockEdge = "" }
                         root.applyDock(); root.menuOpen = false
                     }
+                }
+            }
+
+            Rectangle { width: menuCol.width; height: 1; color: ui.theme.strokeColor; opacity: 0.5 }
+
+            // Size. The default 30px button is a mouse target; this panel is
+            // tapped with a pen and read at arm's length.
+            Row {
+                spacing: 4
+                FlatButton {
+                    text: qsTrc("notation", "S")
+                    toolTipTitle: qsTrc("notation", "Small toolbar")
+                    accentButton: Math.abs(root.uiScale - 1.0) < 0.01
+                    onClicked: { root.uiScale = 1.0; Qt.callLater(root.applyDock) }
+                }
+                FlatButton {
+                    text: qsTrc("notation", "M")
+                    toolTipTitle: qsTrc("notation", "Medium toolbar")
+                    accentButton: Math.abs(root.uiScale - 1.5) < 0.01
+                    onClicked: { root.uiScale = 1.5; Qt.callLater(root.applyDock) }
+                }
+                FlatButton {
+                    text: qsTrc("notation", "L")
+                    toolTipTitle: qsTrc("notation", "Large toolbar")
+                    accentButton: Math.abs(root.uiScale - 2.0) < 0.01
+                    onClicked: { root.uiScale = 2.0; Qt.callLater(root.applyDock) }
                 }
             }
 
