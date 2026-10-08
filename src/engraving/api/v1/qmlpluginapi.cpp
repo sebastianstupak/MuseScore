@@ -42,6 +42,7 @@
 
 #include "engraving/dom/mscore.h" // SelectType
 #include "engraving/dom/score.h"       // T2: Score::dummy() for element construction
+#include "engraving/dom/select.h"      // T2: Score::selection().elements() for dragSelection
 #include "engraving/dom/accidental.h"  // T2: Accidental / AccidentalType (dropSingle)
 #include "engraving/dom/clef.h"         // T2: Clef / ClefType / ClefTypeList (dropSingle)
 #include "engraving/dom/barline.h"      // T2: BarLine (dropSingle barline)
@@ -689,6 +690,48 @@ void PluginAPI::deleteSelection()
         return;
     }
     notation->interaction()->deleteSelection();
+}
+
+void PluginAPI::nudgeSelection(const QString& dir, bool quickly)
+{
+    notation::INotationPtr notation = context()->currentNotation();
+    if (!notation) {
+        return;
+    }
+    mu::notation::MoveDirection d = mu::notation::MoveDirection::Undefined;
+    if (dir == "left") {
+        d = mu::notation::MoveDirection::Left;
+    } else if (dir == "right") {
+        d = mu::notation::MoveDirection::Right;
+    } else if (dir == "up") {
+        d = mu::notation::MoveDirection::Up;
+    } else if (dir == "down") {
+        d = mu::notation::MoveDirection::Down;
+    }
+    if (d == mu::notation::MoveDirection::Undefined) {
+        return;
+    }
+    notation->interaction()->nudge(d, quickly);
+}
+
+void PluginAPI::dragSelection(qreal x1, qreal y1, qreal x2, qreal y2)
+{
+    notation::INotationPtr notation = context()->currentNotation();
+    if (!notation) {
+        return;
+    }
+    mu::engraving::Score* score = notation->elements() ? notation->elements()->msScore() : nullptr;
+    if (!score) {
+        return;
+    }
+    std::vector<mu::engraving::EngravingItem*> elems = score->selection().elements();
+    if (elems.empty()) {
+        return;
+    }
+    auto interaction = notation->interaction();
+    interaction->startDrag(elems, muse::PointF(), [](const mu::engraving::EngravingItem*) { return true; });
+    interaction->drag(muse::PointF(x1, y1), muse::PointF(x2, y2), mu::notation::DragMode::BothXY);
+    interaction->endDrag();
 }
 
 static mu::engraving::Note* nearestNoteToPoint(const mu::notation::INotationPtr& notation,

@@ -594,6 +594,13 @@ public:
     /// Attach an arpeggio (chord roll) at a score point. Snaps to the note under the
     /// point and applies a normal arpeggio to its chord. Returns true if applied.
     Q_INVOKABLE bool applyArpeggio(qreal x, qreal y);
+    /// Nudge the current selection one discrete step in \p dir ("left"/"right"/"up"/
+    /// "down"); \p quickly uses the larger step. Delegates to the notation nudge, so it is
+    /// unit- and undo-correct (unlike hand-set offsets). \since MuseScore 4.6
+    Q_INVOKABLE void nudgeSelection(const QString& dir, bool quickly = false);
+    /// Free-drag the current selection from score point (\p x1,\p y1) to (\p x2,\p y2) —
+    /// e.g. to move a lasso selection to an arbitrary spot. \since MuseScore 4.6
+    Q_INVOKABLE void dragSelection(qreal x1, qreal y1, qreal x2, qreal y2);
     /// \endcond
 
     Q_INVOKABLE void log(const QString&);
