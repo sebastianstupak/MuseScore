@@ -34,6 +34,7 @@
 #include "engraving/dom/fret.h"
 #include "engraving/dom/harmony.h"
 #include "engraving/dom/hook.h"
+#include "engraving/dom/image.h"
 #include "engraving/dom/lyrics.h"
 #include "engraving/dom/measure.h"
 #include "engraving/dom/note.h"
@@ -1779,6 +1780,34 @@ public:
 //   Beam
 ///    \since MuseScore 4.7
 //---------------------------------------------------------
+
+//---------------------------------------------------------
+//   Image
+///   Wrapper for an IMAGE element. The v1 API can already create, anchor and
+///   size an empty image; this adds the one missing piece — setting the image
+///   bytes — so ink/graphics can be baked into the score and carried by its
+///   own PDF/image exports.
+///   \since MuseScore 4.6
+//---------------------------------------------------------
+
+class Image : public EngravingItem
+{
+    Q_OBJECT
+
+public:
+    /// \cond MS_INTERNAL
+    Image(mu::engraving::Image* im = nullptr, Ownership own = Ownership::PLUGIN)
+        : EngravingItem(im, own) {}
+
+    mu::engraving::Image* image() { return toImage(e); }
+    const mu::engraving::Image* image() const { return toImage(e); }
+    /// \endcond
+
+    /// Load image \p data into this element so it travels with the score.
+    /// \p suffix is the format hint ("svg", "png", …). Returns true on success.
+    /// \since MuseScore 4.6
+    Q_INVOKABLE bool loadFromData(const QString& suffix, const QByteArray& data);
+};
 
 class Beam : public EngravingItem
 {

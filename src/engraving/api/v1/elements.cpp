@@ -22,6 +22,8 @@
 
 #include "elements.h"
 
+#include "global/types/bytearray.h"
+
 #include "engraving/dom/chord.h"
 #include "engraving/dom/guitarbend.h"
 #include "engraving/dom/measure.h"
@@ -801,6 +803,19 @@ QVariantList FretDiagram::barres() const
 ///   at runtime based on the actual element type.
 //---------------------------------------------------------
 
+//---------------------------------------------------------
+//   Image::loadFromData
+//---------------------------------------------------------
+
+bool Image::loadFromData(const QString& suffix, const QByteArray& data)
+{
+    mu::engraving::Image* im = image();
+    if (!im) {
+        return false;
+    }
+    return im->loadFromData(suffix.toStdString(), muse::ByteArray::fromQByteArray(data));
+}
+
 EngravingItem* mu::engraving::apiv1::wrap(mu::engraving::EngravingItem* e, Ownership own)
 {
     if (!e) {
@@ -820,6 +835,7 @@ EngravingItem* mu::engraving::apiv1::wrap(mu::engraving::EngravingItem* e, Owner
     API_WRAP(Beam)
     API_WRAP(Lyrics)
     API_WRAP(Harmony)
+    API_WRAP(Image)
     API_WRAP(FretDiagram)
     API_WRAP(Segment)
     API_WRAP(Measure)
