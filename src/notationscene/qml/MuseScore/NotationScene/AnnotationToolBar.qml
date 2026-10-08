@@ -45,6 +45,7 @@ Item {
     property string dockEdge: "right"   // "" (floating), "left", "right", "top", "bottom"
     property bool floatHorizontal: false   // orientation while floating
     property bool menuOpen: false
+    onMenuOpenChanged: Qt.callLater(root.reportGeometry)
     readonly property bool horizontal: dockEdge === "top" || dockEdge === "bottom" || (dockEdge === "" && floatHorizontal)
 
     visible: !!view
@@ -181,6 +182,7 @@ Item {
                                    Math.round(bg.width), Math.round(bg.height), cols,
                                    Math.round(parent ? parent.width : 0),
                                    Math.round(parent ? parent.height : 0),
+                                   root.menuOpen,
                                    "focus=" + btnCentre(focusBtn)
                                    + ";save=" + btnCentre(saveBtn)
                                    + ";note=" + btnCentre(noteBtn)
@@ -395,6 +397,31 @@ Item {
                 }
             }
         }
+    }
+
+    // Dismissing the dock menu. It is a plain Rectangle rather than a Popup,
+    // so it came with none of a Popup's behaviour: Escape did nothing and a
+    // tap outside did nothing, leaving "choose one of the options" as the
+    // only way out of a menu opened by accident -- on a device with no
+    // keyboard, a trap. Both are wired up by hand here.
+    //
+    // It also made the handle a pure toggle with no way to tell open from
+    // closed, which is what let a test tap the handle, see the menu VANISH,
+    // and report that it had opened.
+    MouseArea {
+        parent: root.parent
+        anchors.fill: parent
+        z: 9
+        visible: root.menuOpen
+        enabled: root.menuOpen
+        onPressed: function(mouse) { root.menuOpen = false; mouse.accepted = true }
+    }
+
+    Shortcut {
+        sequence: "Escape"
+        enabled: root.menuOpen
+        context: Qt.WindowShortcut
+        onActivated: root.menuOpen = false
     }
 
     // Dock menu — tap the handle to open. Choose orientation + where to dock.

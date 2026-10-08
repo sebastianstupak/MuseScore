@@ -1329,11 +1329,12 @@ void AbstractNotationPaintView::writeAnnotationStatus()
         // test then reported as "the popover did not open".
         const QString s = QString("{\"annotationMode\":%1,\"strokes\":%2,"
                                   "\"toolbar\":{\"x\":%3,\"y\":%4,\"w\":%5,\"h\":%6,\"cols\":%7,"
-                                  "\"winw\":%8,\"winh\":%9,\"buttons\":\"%10\"}}")
+                                  "\"winw\":%8,\"winh\":%9,\"menu\":%10,\"buttons\":\"%11\"}}")
                           .arg(m_annotationMode ? "true" : "false")
                           .arg(m_annotationLayer->strokeCount())
                           .arg(m_tbX).arg(m_tbY).arg(m_tbW).arg(m_tbH).arg(m_tbCols)
-                          .arg(m_tbWinW).arg(m_tbWinH).arg(m_tbButtons);
+                          .arg(m_tbWinW).arg(m_tbWinH)
+                          .arg(m_tbMenuOpen ? "true" : "false").arg(m_tbButtons);
         f.write(s.toUtf8());
     }
 }
@@ -1568,14 +1569,15 @@ void AbstractNotationPaintView::dispatchAction(const QString& code)
 }
 
 void AbstractNotationPaintView::reportToolbarGeometry(int x, int y, int w, int hgt, int cols, int winW, int winH,
-                                                      const QString& buttons)
+                                                      bool menuOpen, const QString& buttons)
 {
     if (m_tbX == x && m_tbY == y && m_tbW == w && m_tbH == hgt && m_tbCols == cols
-        && m_tbWinW == winW && m_tbWinH == winH && m_tbButtons == buttons) {
+        && m_tbWinW == winW && m_tbWinH == winH && m_tbButtons == buttons
+        && m_tbMenuOpen == menuOpen) {
         return;
     }
     m_tbX = x; m_tbY = y; m_tbW = w; m_tbH = hgt; m_tbCols = cols;
-    m_tbWinW = winW; m_tbWinH = winH; m_tbButtons = buttons;
+    m_tbWinW = winW; m_tbWinH = winH; m_tbButtons = buttons; m_tbMenuOpen = menuOpen;
     writeAnnotationStatus();
 }
 
