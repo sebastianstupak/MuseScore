@@ -53,6 +53,7 @@
 #include "engraving/dom/spanner.h"
 #include "engraving/dom/accidental.h"
 #include "engraving/dom/notedot.h"
+#include "notation/types/noteinputtypes.h"
 #include "engraving/types/symid.h"
 #include "engraving/api/v1/qmlpluginapi.h"
 #include "project/inotationproject.h"
@@ -1308,6 +1309,21 @@ void NotationActionController::runStylusSelfTest()
             const double y1 = std::max(a.y() + a.height(), b.y() + b.height());
             return muse::RectF(x0, y0, x1 - x0, y1 - y0);
         };
+        // Sub-element box helper (named "<render>.<part>"); needed by both the composite
+        // shots and the complex-notation shots, so it lives up here.
+        auto boxN = [&](const QString& name, const muse::RectF& r) {
+            QJsonObject o;
+            o["name"] = name;
+            o["x"] = r.x();
+            o["y"] = r.y();
+            o["w"] = r.width();
+            o["h"] = r.height();
+            boxes.append(o);
+        };
+        // $NEUME_SHOTS_COMPLEX_ONLY renders JUST the complex-notation shots (fast
+        // iteration): skip the full element/composite/placement sweep below.
+        const bool complexOnly = qEnvironmentVariableIsSet("NEUME_SHOTS_COMPLEX_ONLY");
+        if (!complexOnly) {
         // The box of the actual engraved element after a drop. Clefs, time sigs and
         // barlines snap far from the drop point (a clef jumps to the staff start), so
         // the drop-target box is the wrong anchor for the overlay -- scan the measure
@@ -1569,16 +1585,7 @@ void NotationActionController::runStylusSelfTest()
 
         // ---------- Composite cases: chords, adding to a chord, compound note, passage ----------
         // Sub-element boxes are named "<render>.<part>" so the dashboard can overlay each
-        // input gesture on the exact note/symbol it produced.
-        auto boxN = [&](const QString& name, const muse::RectF& r) {
-            QJsonObject o;
-            o["name"] = name;
-            o["x"] = r.x();
-            o["y"] = r.y();
-            o["w"] = r.width();
-            o["h"] = r.height();
-            boxes.append(o);
-        };
+        // input gesture on the exact note/symbol it produced. (boxN is defined above.)
         auto selectNote = [&](mu::engraving::Note* n) {
             currentNotation()->interaction()->select({ n });
         };
@@ -1759,6 +1766,31 @@ void NotationActionController::runStylusSelfTest()
                 }
             }
         }
+
+        } // end of the full sweep ($NEUME_SHOTS_COMPLEX_ONLY skips it)
+
+        // --- More complex notation via the interaction API (plain cmd() dispatch is a
+        // no-op in this self-test harness): a triplet, a grace note, a tie. Each is
+        // applied to one note and framed by that note's measure.
+        auto directCase = [&](const char* key, size_t idx, int kind) {
+            std::vector<mu::engraving::Note*> ns = loadFresh();
+            if (idx >= ns.size()) {
+                return;
+            }
+            mu::engraving::Measure* m = ns[idx]->chord()->measure();
+            auto inter = currentNotation()->interaction();
+            inter->select({ ns[idx] });
+            if (kind == 1) { // grace note (acciaccatura)
+                inter->addGraceNotesToSelectedNotes(mu::engraving::NoteType::ACCIACCATURA);
+            } else { // tie to the next note
+                inter->toggleTieForSelection();
+            }
+            currentNotationScore()->doLayout();
+            boxN(key, m->canvasBoundingRect());
+            renderPng(dir + "/" + QString::fromUtf8(key) + ".png");
+        };
+        directCase("grace", 2, 1);
+        directCase("tie", 2, 2);
 
         QJsonObject root;
         root["boxes"] = boxes;
