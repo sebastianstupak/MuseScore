@@ -168,7 +168,9 @@ Item {
         var per = root.btn + root.gap
         var cols = root.horizontal ? 1 : Math.max(1, Math.round(bg.width / per))
         view.reportToolbarGeometry(Math.round(root.x), Math.round(root.y),
-                                   Math.round(bg.width), Math.round(bg.height), cols)
+                                   Math.round(bg.width), Math.round(bg.height), cols,
+                                   Math.round(parent ? parent.width : 0),
+                                   Math.round(parent ? parent.height : 0))
     }
     onXChanged: Qt.callLater(reportGeometry)
     onYChanged: Qt.callLater(reportGeometry)

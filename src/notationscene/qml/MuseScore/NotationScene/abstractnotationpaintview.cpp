@@ -1313,6 +1313,14 @@ void AbstractNotationPaintView::writeAnnotationStatus()
     }
     QFile f(m_annotationStatusPath);
     if (f.open(QIODevice::WriteOnly | QIODevice::Truncate)) {
+        // The WINDOW size travels with the toolbar box because these are
+        // QML logical pixels and a tap is in physical screen pixels. On
+        // this panel the two differ by 2.25x (QT_SCALE_FACTOR on top of the
+        // device ratio), so a test that treated the reported 1031 as a
+        // screen coordinate tapped the middle of the score. Reporting the
+        // window lets the caller derive the factor instead of hardcoding a
+        // number that changes with the scale setting.
+        //
         // Toolbar geometry goes in here so a test can tap the handle and the
         // size buttons by position instead of guessing offsets from the
         // screen edge. That guess broke the moment the strip wrapped into
@@ -1320,10 +1328,12 @@ void AbstractNotationPaintView::writeAnnotationStatus()
         // the tap meant for the dock handle hit a tool button, which the
         // test then reported as "the popover did not open".
         const QString s = QString("{\"annotationMode\":%1,\"strokes\":%2,"
-                                  "\"toolbar\":{\"x\":%3,\"y\":%4,\"w\":%5,\"h\":%6,\"cols\":%7}}")
+                                  "\"toolbar\":{\"x\":%3,\"y\":%4,\"w\":%5,\"h\":%6,\"cols\":%7,"
+                                  "\"winw\":%8,\"winh\":%9}}")
                           .arg(m_annotationMode ? "true" : "false")
                           .arg(m_annotationLayer->strokeCount())
-                          .arg(m_tbX).arg(m_tbY).arg(m_tbW).arg(m_tbH).arg(m_tbCols);
+                          .arg(m_tbX).arg(m_tbY).arg(m_tbW).arg(m_tbH).arg(m_tbCols)
+                          .arg(m_tbWinW).arg(m_tbWinH);
         f.write(s.toUtf8());
     }
 }
@@ -1557,12 +1567,14 @@ void AbstractNotationPaintView::dispatchAction(const QString& code)
     dispatcher()->dispatch(code.toStdString());
 }
 
-void AbstractNotationPaintView::reportToolbarGeometry(int x, int y, int w, int hgt, int cols)
+void AbstractNotationPaintView::reportToolbarGeometry(int x, int y, int w, int hgt, int cols, int winW, int winH)
 {
-    if (m_tbX == x && m_tbY == y && m_tbW == w && m_tbH == hgt && m_tbCols == cols) {
+    if (m_tbX == x && m_tbY == y && m_tbW == w && m_tbH == hgt && m_tbCols == cols
+        && m_tbWinW == winW && m_tbWinH == winH) {
         return;
     }
     m_tbX = x; m_tbY = y; m_tbW = w; m_tbH = hgt; m_tbCols = cols;
+    m_tbWinW = winW; m_tbWinH = winH;
     writeAnnotationStatus();
 }
 
