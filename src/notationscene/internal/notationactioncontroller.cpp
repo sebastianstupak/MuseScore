@@ -1792,6 +1792,58 @@ void NotationActionController::runStylusSelfTest()
         directCase("grace", 2, 1);
         directCase("tie", 2, 2);
 
+        // Beamed group: four eighth notes entered via note input (putNote advances the
+        // input cursor, unlike cmd note entry which no-ops here) auto-beam together.
+        {
+            std::vector<mu::engraving::Note*> ns = loadFresh();
+            if (!ns.empty()) {
+                auto inter = currentNotation()->interaction();
+                inter->select({ ns[0] });
+                const double bx = scx(ns[0]);
+                const double by = scy(ns[0]);
+                auto ni = inter->noteInput();
+                ni->startNoteInput();
+                ni->setDuration(mu::engraving::DurationType::V_EIGHTH);
+                for (int i = 0; i < 4; ++i) {
+                    ni->putNote(muse::PointF(bx, by - static_cast<double>(i) * 3.0), false, false);
+                }
+                ni->endNoteInput();
+                currentNotationScore()->doLayout();
+                mu::engraving::Measure* m = currentNotationScore()->firstMeasure();
+                boxN("beam", m ? m->canvasBoundingRect() : muse::RectF());
+                renderPng(dir + "/beam.png");
+            }
+        }
+
+        // Rich passage: a grace note, a chord, a tie, a slur, a crescendo and a staccato
+        // layered onto the opening -- several complex structures in one excerpt.
+        {
+            std::vector<mu::engraving::Note*> ns = loadFresh();
+            if (ns.size() > 5) {
+                auto inter = currentNotation()->interaction();
+                inter->select({ ns[0] });
+                inter->addGraceNotesToSelectedNotes(mu::engraving::NoteType::ACCIACCATURA);
+                inter->select({ ns[1] });
+                inter->addIntervalToSelectedNotes(3);
+                inter->select({ ns[1] });
+                inter->addIntervalToSelectedNotes(5);
+                inter->select({ ns[2] });
+                inter->toggleTieForSelection();
+                currentNotationScore()->doLayout();
+                mu::engraving::apiv1::PluginAPI api2(iocContext());
+                api2.applySpan("slur", scx(ns[0]), scy(ns[0]), scx(ns[3]), scy(ns[3]));
+                api2.applySpan("crescendo", scx(ns[1]), scy(ns[1]), scx(ns[5]), scy(ns[5]));
+                api2.applyArticulation("staccato", scx(ns[4]), scy(ns[4]));
+                currentNotationScore()->doLayout();
+                muse::RectF pr = ns[0]->canvasBoundingRect();
+                for (size_t i = 1; i <= 5 && i < ns.size(); ++i) {
+                    pr = uni(pr, ns[i]->canvasBoundingRect());
+                }
+                boxN("richpassage", pr);
+                renderPng(dir + "/richpassage.png");
+            }
+        }
+
         QJsonObject root;
         root["boxes"] = boxes;
         mu::engraving::Score* last = currentNotationScore();
