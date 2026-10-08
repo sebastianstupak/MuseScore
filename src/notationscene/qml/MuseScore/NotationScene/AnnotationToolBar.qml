@@ -161,6 +161,16 @@ Item {
     //
     // The column count comes from the laid-out width: Flow decides it, and
     // nothing else in the file knows how many columns there are.
+    // Centre of a named button, in the same coordinate space as the strip box
+    // the function below reports. Tests tap these; nothing else may.
+    function btnCentre(item) {
+        if (!item || !item.visible || !root.parent) {
+            return "0,0"
+        }
+        var p = item.mapToItem(root.parent, item.width / 2, item.height / 2)
+        return Math.round(p.x) + "," + Math.round(p.y)
+    }
+
     function reportGeometry() {
         if (!view || !bg) {
             return
@@ -170,7 +180,11 @@ Item {
         view.reportToolbarGeometry(Math.round(root.x), Math.round(root.y),
                                    Math.round(bg.width), Math.round(bg.height), cols,
                                    Math.round(parent ? parent.width : 0),
-                                   Math.round(parent ? parent.height : 0))
+                                   Math.round(parent ? parent.height : 0),
+                                   "focus=" + btnCentre(focusBtn)
+                                   + ";save=" + btnCentre(saveBtn)
+                                   + ";note=" + btnCentre(noteBtn)
+                                   + ";handle=" + btnCentre(handle))
     }
     onXChanged: Qt.callLater(reportGeometry)
     onYChanged: Qt.callLater(reportGeometry)
@@ -258,6 +272,7 @@ Item {
 
             // Drag handle
             Rectangle {
+                id: handle
                 width: root.horizontal ? 12 : root.btn
                 height: root.horizontal ? root.btn : 12
                 color: "transparent"
@@ -294,7 +309,7 @@ Item {
             ToolBtn { icon: IconCode.ZOOM_OUT; toolTipTitle: qsTrc("notation", "Zoom out"); onClicked: root.view.dispatchAction("zoomout") }
             ToolBtn { icon: IconCode.ZOOM_IN; toolTipTitle: qsTrc("notation", "Zoom in"); onClicked: root.view.dispatchAction("zoomin") }
             ToolBtn { icon: IconCode.PAGE; toolTipTitle: qsTrc("notation", "Page / continuous view"); onClicked: root.view.toggleViewMode() }
-            ToolBtn { icon: IconCode.SAVE; toolTipTitle: qsTrc("notation", "Save"); onClicked: root.view.dispatchAction("file-save") }
+            ToolBtn { id: saveBtn; icon: IconCode.SAVE; toolTipTitle: qsTrc("notation", "Save"); onClicked: root.view.dispatchAction("file-save") }
             ToolBtn { text: "PDF"; toolTipTitle: qsTrc("notation", "Export…"); onClicked: root.view.dispatchAction("file-export") }
 
             Rectangle { width: root.horizontal ? 1 : root.btn; height: root.horizontal ? root.btn : 1; color: ui.theme.strokeColor; opacity: 0.5 }
@@ -310,12 +325,12 @@ Item {
             ToolBtn { icon: IconCode.REDO; toolTipTitle: qsTrc("notation", "Redo"); onClicked: root.view.dispatchAction("action://notation/redo") }
 
             // Note input, which normally lives in the bar we hide.
-            ToolBtn { text: "N"; toolTipTitle: qsTrc("notation", "Note input (N)"); accentButton: root.view.isActionChecked("note-input"); onClicked: root.view.dispatchAction("note-input") }
+            ToolBtn { id: noteBtn; text: "N"; toolTipTitle: qsTrc("notation", "Note input (N)"); accentButton: root.view.isActionChecked("note-input"); onClicked: root.view.dispatchAction("note-input") }
 
             // Focus mode: hide the palettes, Layout, Properties, the
             // note-input bar and the playback bar, leaving the page and
             // this strip.
-            ToolBtn { text: "⤢"; toolTipTitle: qsTrc("notation", "Focus mode — hide panels and toolbars"); accentButton: root.focusMode; onClicked: root.setFocusMode(!root.focusMode) }
+            ToolBtn { id: focusBtn; text: "⤢"; toolTipTitle: qsTrc("notation", "Focus mode — hide panels and toolbars"); accentButton: root.focusMode; onClicked: root.setFocusMode(!root.focusMode) }
 
             Rectangle { width: root.horizontal ? 1 : root.btn; height: root.horizontal ? root.btn : 1; color: ui.theme.strokeColor; opacity: 0.5 }
 
@@ -433,9 +448,15 @@ Item {
             anchors.centerIn: parent
             spacing: 4
 
+            // Fixed, so the equal-width rows below cannot form a binding loop
+            // by sizing themselves from the width they themselves determine.
+            readonly property real colw: Math.round(150 * Math.max(1, root.uiScale * 0.8))
+
             Row {
                 spacing: 4
+                readonly property real cell: (menuCol.colw - spacing) / 2
                 FlatButton {
+                    width: parent.cell
                     text: qsTrc("notation", "Horizontal")
                     accentButton: root.horizontal
                     onClicked: {
@@ -445,6 +466,7 @@ Item {
                     }
                 }
                 FlatButton {
+                    width: parent.cell
                     text: qsTrc("notation", "Vertical")
                     accentButton: !root.horizontal
                     onClicked: {
@@ -455,25 +477,29 @@ Item {
                 }
             }
 
-            Rectangle { width: menuCol.width; height: 1; color: ui.theme.strokeColor; opacity: 0.5 }
+            Rectangle { width: menuCol.colw; height: 1; color: ui.theme.strokeColor; opacity: 0.5 }
 
             // Size. The default 30px button is a mouse target; this panel is
             // tapped with a pen and read at arm's length.
             Row {
                 spacing: 4
+                readonly property real cell: (menuCol.colw - 2 * spacing) / 3
                 FlatButton {
+                    width: parent.cell
                     text: qsTrc("notation", "S")
                     toolTipTitle: qsTrc("notation", "Small toolbar")
                     accentButton: Math.abs(root.uiScale - 1.0) < 0.01
                     onClicked: { root.uiScale = 1.0; Qt.callLater(root.applyDock) }
                 }
                 FlatButton {
+                    width: parent.cell
                     text: qsTrc("notation", "M")
                     toolTipTitle: qsTrc("notation", "Medium toolbar")
                     accentButton: Math.abs(root.uiScale - 1.5) < 0.01
                     onClicked: { root.uiScale = 1.5; Qt.callLater(root.applyDock) }
                 }
                 FlatButton {
+                    width: parent.cell
                     text: qsTrc("notation", "L")
                     toolTipTitle: qsTrc("notation", "Large toolbar")
                     accentButton: Math.abs(root.uiScale - 2.0) < 0.01
@@ -481,12 +507,12 @@ Item {
                 }
             }
 
-            Rectangle { width: menuCol.width; height: 1; color: ui.theme.strokeColor; opacity: 0.5 }
+            Rectangle { width: menuCol.colw; height: 1; color: ui.theme.strokeColor; opacity: 0.5 }
 
-            FlatButton { width: menuCol.width; text: qsTrc("notation", "Float"); accentButton: root.dockEdge === ""; onClicked: { root.dockEdge = ""; root.applyDock(); root.menuOpen = false } }
-            FlatButton { width: menuCol.width; text: qsTrc("notation", "Dock left"); accentButton: root.dockEdge === "left"; onClicked: { root.dockEdge = "left"; root.applyDock(); root.menuOpen = false } }
-            FlatButton { width: menuCol.width; text: qsTrc("notation", "Dock right"); accentButton: root.dockEdge === "right"; onClicked: { root.dockEdge = "right"; root.applyDock(); root.menuOpen = false } }
-            FlatButton { width: menuCol.width; text: qsTrc("notation", "Dock bottom"); accentButton: root.dockEdge === "bottom"; onClicked: { root.dockEdge = "bottom"; root.applyDock(); root.menuOpen = false } }
+            FlatButton { width: menuCol.colw; text: qsTrc("notation", "Float"); accentButton: root.dockEdge === ""; onClicked: { root.dockEdge = ""; root.applyDock(); root.menuOpen = false } }
+            FlatButton { width: menuCol.colw; text: qsTrc("notation", "Dock left"); accentButton: root.dockEdge === "left"; onClicked: { root.dockEdge = "left"; root.applyDock(); root.menuOpen = false } }
+            FlatButton { width: menuCol.colw; text: qsTrc("notation", "Dock right"); accentButton: root.dockEdge === "right"; onClicked: { root.dockEdge = "right"; root.applyDock(); root.menuOpen = false } }
+            FlatButton { width: menuCol.colw; text: qsTrc("notation", "Dock bottom"); accentButton: root.dockEdge === "bottom"; onClicked: { root.dockEdge = "bottom"; root.applyDock(); root.menuOpen = false } }
         }
     }
 }
