@@ -1329,12 +1329,14 @@ void AbstractNotationPaintView::writeAnnotationStatus()
         // test then reported as "the popover did not open".
         const QString s = QString("{\"annotationMode\":%1,\"strokes\":%2,"
                                   "\"toolbar\":{\"x\":%3,\"y\":%4,\"w\":%5,\"h\":%6,\"cols\":%7,"
-                                  "\"winw\":%8,\"winh\":%9,\"menu\":%10,\"buttons\":\"%11\"}}")
+                                  "\"winw\":%8,\"winh\":%9,\"menu\":%10,\"labels\":%11,"
+                                  "\"buttons\":\"%12\"}}")
                           .arg(m_annotationMode ? "true" : "false")
                           .arg(m_annotationLayer->strokeCount())
                           .arg(m_tbX).arg(m_tbY).arg(m_tbW).arg(m_tbH).arg(m_tbCols)
                           .arg(m_tbWinW).arg(m_tbWinH)
-                          .arg(m_tbMenuOpen ? "true" : "false").arg(m_tbButtons);
+                          .arg(m_tbMenuOpen ? "true" : "false")
+                          .arg(m_tbLabels ? "true" : "false").arg(m_tbButtons);
         f.write(s.toUtf8());
     }
 }
@@ -1569,15 +1571,15 @@ void AbstractNotationPaintView::dispatchAction(const QString& code)
 }
 
 void AbstractNotationPaintView::reportToolbarGeometry(int x, int y, int w, int hgt, int cols, int winW, int winH,
-                                                      bool menuOpen, const QString& buttons)
+                                                      bool menuOpen, bool labels, const QString& buttons)
 {
     if (m_tbX == x && m_tbY == y && m_tbW == w && m_tbH == hgt && m_tbCols == cols
         && m_tbWinW == winW && m_tbWinH == winH && m_tbButtons == buttons
-        && m_tbMenuOpen == menuOpen) {
+        && m_tbMenuOpen == menuOpen && m_tbLabels == labels) {
         return;
     }
     m_tbX = x; m_tbY = y; m_tbW = w; m_tbH = hgt; m_tbCols = cols;
-    m_tbWinW = winW; m_tbWinH = winH; m_tbButtons = buttons; m_tbMenuOpen = menuOpen;
+    m_tbWinW = winW; m_tbWinH = winH; m_tbButtons = buttons; m_tbMenuOpen = menuOpen; m_tbLabels = labels;
     writeAnnotationStatus();
 }
 

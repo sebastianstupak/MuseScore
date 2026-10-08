@@ -93,6 +93,7 @@ class AbstractNotationPaintView : public muse::uicomponents::QuickPaintedView, p
     muse::ContextInject<muse::ui::IUiActionsRegister> actionsRegister = { this };
     int m_tbX = 0, m_tbY = 0, m_tbW = 0, m_tbH = 0, m_tbCols = 0, m_tbWinW = 0, m_tbWinH = 0;
     bool m_tbMenuOpen = false;
+    bool m_tbLabels = true;
     QString m_tbButtons;   // "focus=x,y;save=x,y;..." in the same units as the box
 
 public:
@@ -143,7 +144,8 @@ public:
     // Four greys apart is not a discriminator, and threshold-tuning against
     // it produced a "locator" that matched half the page.
     Q_INVOKABLE void reportToolbarGeometry(int x, int y, int w, int hgt, int cols, int winW, int winH,
-                                           bool menuOpen = false, const QString& buttons = QString());
+                                           bool menuOpen = false, bool labels = true,
+                                           const QString& buttons = QString());
     Q_INVOKABLE bool isActionChecked(const QString& code) const;
     // Drive a toggle to a specific state, dispatching only when it differs.
     Q_INVOKABLE void setActionChecked(const QString& code, bool checked);

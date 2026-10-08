@@ -117,6 +117,46 @@ Item {
     readonly property int glyph: Math.round(16 * uiScale)
     readonly property real gap: Math.max(2, Math.round(3 * uiScale))
 
+    // Labels, because this strip is used with a pen and a pen does not
+    // hover. Every button carried a toolTipTitle and not one of them could
+    // ever be read: a tooltip needs a pointer resting on the control. The
+    // icons were therefore the whole interface -- and two pairs of them
+    // (annotate/pen, score undo/ink undo) were drawn identically.
+    property bool showLabels: true
+    readonly property int labelPx: Math.max(9, Math.round(10 * uiScale))
+
+    // Cell width comes from MEASURING the longest label, not from some
+    // multiple of the button size. Guessing a multiple is how the export
+    // button came to render "PDF" as "PD".
+    readonly property var allLabels: [
+        "Play", "Stop", "Start", "Loop", "Metro",
+        "Zoom -", "Zoom +", "View", "Save", "Export",
+        "Undo", "Redo", "Notes", "Focus",
+        "Ink", "Write", "Multi",
+        "Pen", "Marker", "Eraser", "Undo ink", "Redo ink", "Clear",
+        "Colour", "Width"
+    ]
+    readonly property string longestLabel: {
+        var best = ""
+        for (var i = 0; i < allLabels.length; ++i) {
+            if (allLabels[i].length > best.length) {
+                best = allLabels[i]
+            }
+        }
+        return best
+    }
+    TextMetrics {
+        id: labelMetrics
+        font: Qt.font({ family: ui.theme.bodyFont.family, pixelSize: root.labelPx })
+        text: root.longestLabel
+    }
+    readonly property real cellW: root.showLabels
+        ? Math.max(root.btn, Math.ceil(labelMetrics.width) + 10)
+        : root.btn
+    readonly property real cellH: root.showLabels
+        ? root.btn + root.labelPx + 10
+        : root.btn
+
     readonly property var palette: ["#1a1a1a", "#e03030", "#2a6be0", "#28a745", "#f0a020", "#a020c0"]
     readonly property var widths: [6, 15, 30]
 
@@ -127,8 +167,19 @@ Item {
         // width/height, not Layout.preferred*: inside a Flow there is no
         // layout attached to honour those, and every button would collapse
         // to its implicit size.
-        width: root.btn
-        height: root.btn
+        property string label: ""
+
+        width: root.cellW
+        height: root.cellH
+        // FlatButton defaults to minWidth 132 and margins 16 for anything
+        // that is not icon-only -- sized for a dialog, not for a cell on a
+        // tool strip. Adding a label silently switches it into that mode.
+        minWidth: 0
+        margins: 2
+        orientation: Qt.Vertical
+        maximumLineCount: 1
+        text: root.showLabels ? label : ""
+        accessible.name: label !== "" ? label : toolTipTitle
         // textFont, NOT font: FlatButton declares `property font iconFont`
         // and `property font textFont`, and has no plain `font`. Assigning
         // to it is not a no-op -- QML refuses to load the component, which
@@ -140,7 +191,21 @@ Item {
         // Built with Qt.font() rather than the grouped form so the family
         // comes from the theme and only the size is ours.
         iconFont: Qt.font({ family: ui.theme.iconsFont.family, pixelSize: root.glyph })
-        textFont: Qt.font({ family: ui.theme.bodyFont.family, pixelSize: root.glyph })
+        textFont: Qt.font({ family: ui.theme.bodyFont.family, pixelSize: root.labelPx })
+
+        // The theme's accent is a pale blue. This panel is greyscale
+        // e-ink, where that sits about 35 levels from the normal button
+        // fill: a tint you have to go looking for. An outline survives the
+        // conversion to grey, so which tool is ON stays readable.
+        Rectangle {
+            anchors.fill: parent
+            z: 100
+            visible: parent.accentButton
+            color: "transparent"
+            radius: 3
+            border.width: Math.max(2, Math.round(root.uiScale))
+            border.color: ui.theme.fontPrimaryColor
+        }
     }
 
     // Float over the WHOLE window, not just the canvas.
@@ -176,13 +241,13 @@ Item {
         if (!view || !bg) {
             return
         }
-        var per = root.btn + root.gap
+        var per = root.cellW + root.gap
         var cols = root.horizontal ? 1 : Math.max(1, Math.round(bg.width / per))
         view.reportToolbarGeometry(Math.round(root.x), Math.round(root.y),
                                    Math.round(bg.width), Math.round(bg.height), cols,
                                    Math.round(parent ? parent.width : 0),
                                    Math.round(parent ? parent.height : 0),
-                                   root.menuOpen,
+                                   root.menuOpen, root.showLabels,
                                    "focus=" + btnCentre(focusBtn)
                                    + ";save=" + btnCentre(saveBtn)
                                    + ";note=" + btnCentre(noteBtn)
@@ -275,8 +340,8 @@ Item {
             // Drag handle
             Rectangle {
                 id: handle
-                width: root.horizontal ? 12 : root.btn
-                height: root.horizontal ? root.btn : 12
+                width: root.horizontal ? 12 : root.cellW
+                height: root.horizontal ? root.cellH : 12
                 color: "transparent"
                 Grid {
                     anchors.centerIn: parent
@@ -299,22 +364,22 @@ Item {
             }
 
             // Playback
-            ToolBtn { icon: IconCode.PLAY; toolTipTitle: qsTrc("notation", "Play / Pause"); onClicked: root.view.dispatchAction("play") }
-            ToolBtn { icon: IconCode.STOP; toolTipTitle: qsTrc("notation", "Stop"); onClicked: root.view.dispatchAction("stop") }
-            ToolBtn { icon: IconCode.REWIND; toolTipTitle: qsTrc("notation", "Rewind to start"); onClicked: root.view.dispatchAction("rewind") }
-            ToolBtn { icon: IconCode.LOOP; toolTipTitle: qsTrc("notation", "Toggle loop"); onClicked: root.view.dispatchAction("loop") }
-            ToolBtn { icon: IconCode.METRONOME; toolTipTitle: qsTrc("notation", "Toggle metronome"); onClicked: root.view.dispatchAction("metronome") }
+            ToolBtn { icon: IconCode.PLAY; label: qsTrc("notation", "Play"); toolTipTitle: qsTrc("notation", "Play / Pause"); onClicked: root.view.dispatchAction("play") }
+            ToolBtn { icon: IconCode.STOP; label: qsTrc("notation", "Stop"); toolTipTitle: qsTrc("notation", "Stop"); onClicked: root.view.dispatchAction("stop") }
+            ToolBtn { icon: IconCode.REWIND; label: qsTrc("notation", "Start"); toolTipTitle: qsTrc("notation", "Rewind to start"); onClicked: root.view.dispatchAction("rewind") }
+            ToolBtn { icon: IconCode.LOOP; label: qsTrc("notation", "Loop"); toolTipTitle: qsTrc("notation", "Toggle loop"); onClicked: root.view.dispatchAction("loop") }
+            ToolBtn { icon: IconCode.METRONOME; label: qsTrc("notation", "Metro"); toolTipTitle: qsTrc("notation", "Toggle metronome"); onClicked: root.view.dispatchAction("metronome") }
 
-            Rectangle { width: root.horizontal ? 1 : root.btn; height: root.horizontal ? root.btn : 1; color: ui.theme.strokeColor; opacity: 0.5 }
+            Rectangle { width: root.horizontal ? 1 : root.cellW; height: root.horizontal ? root.cellH : 1; color: ui.theme.strokeColor; opacity: 0.5 }
 
             // Zoom + view + file
-            ToolBtn { icon: IconCode.ZOOM_OUT; toolTipTitle: qsTrc("notation", "Zoom out"); onClicked: root.view.dispatchAction("zoomout") }
-            ToolBtn { icon: IconCode.ZOOM_IN; toolTipTitle: qsTrc("notation", "Zoom in"); onClicked: root.view.dispatchAction("zoomin") }
-            ToolBtn { icon: IconCode.PAGE; toolTipTitle: qsTrc("notation", "Page / continuous view"); onClicked: root.view.toggleViewMode() }
-            ToolBtn { id: saveBtn; icon: IconCode.SAVE; toolTipTitle: qsTrc("notation", "Save"); onClicked: root.view.dispatchAction("file-save") }
-            ToolBtn { text: "PDF"; toolTipTitle: qsTrc("notation", "Export…"); onClicked: root.view.dispatchAction("file-export") }
+            ToolBtn { icon: IconCode.ZOOM_OUT; label: qsTrc("notation", "Zoom -"); toolTipTitle: qsTrc("notation", "Zoom out"); onClicked: root.view.dispatchAction("zoomout") }
+            ToolBtn { icon: IconCode.ZOOM_IN; label: qsTrc("notation", "Zoom +"); toolTipTitle: qsTrc("notation", "Zoom in"); onClicked: root.view.dispatchAction("zoomin") }
+            ToolBtn { icon: IconCode.PAGE_VIEW; label: qsTrc("notation", "View"); toolTipTitle: qsTrc("notation", "Page / continuous view"); onClicked: root.view.toggleViewMode() }
+            ToolBtn { id: saveBtn; icon: IconCode.SAVE; label: qsTrc("notation", "Save"); toolTipTitle: qsTrc("notation", "Save"); onClicked: root.view.dispatchAction("file-save") }
+            ToolBtn { icon: IconCode.SHARE_FILE; label: qsTrc("notation", "Export"); toolTipTitle: qsTrc("notation", "Export to PDF / audio…"); onClicked: root.view.dispatchAction("file-export") }
 
-            Rectangle { width: root.horizontal ? 1 : root.btn; height: root.horizontal ? root.btn : 1; color: ui.theme.strokeColor; opacity: 0.5 }
+            Rectangle { width: root.horizontal ? 1 : root.cellW; height: root.horizontal ? root.cellH : 1; color: ui.theme.strokeColor; opacity: 0.5 }
 
             // Score-level undo/redo. The ink undo/redo further down only
             // touches annotations; with the note-input bar hidden there is
@@ -323,43 +388,56 @@ Item {
             // NotationUiActions actually registers. A bare "undo" is not an
             // unknown-action error, it is a silent no-op -- the button
             // would have looked fine and done nothing.
-            ToolBtn { icon: IconCode.UNDO; toolTipTitle: qsTrc("notation", "Undo"); onClicked: root.view.dispatchAction("action://notation/undo") }
-            ToolBtn { icon: IconCode.REDO; toolTipTitle: qsTrc("notation", "Redo"); onClicked: root.view.dispatchAction("action://notation/redo") }
+            ToolBtn { icon: IconCode.UNDO; label: qsTrc("notation", "Undo"); toolTipTitle: qsTrc("notation", "Undo"); onClicked: root.view.dispatchAction("action://notation/undo") }
+            ToolBtn { icon: IconCode.REDO; label: qsTrc("notation", "Redo"); toolTipTitle: qsTrc("notation", "Redo"); onClicked: root.view.dispatchAction("action://notation/redo") }
 
             // Note input, which normally lives in the bar we hide.
-            ToolBtn { id: noteBtn; text: "N"; toolTipTitle: qsTrc("notation", "Note input (N)"); accentButton: root.view.isActionChecked("note-input"); onClicked: root.view.dispatchAction("note-input") }
+            ToolBtn { id: noteBtn; icon: IconCode.NOTE_QUARTER; label: qsTrc("notation", "Notes"); toolTipTitle: qsTrc("notation", "Note input (N)"); accentButton: root.view.isActionChecked("note-input"); onClicked: root.view.dispatchAction("note-input") }
 
             // Focus mode: hide the palettes, Layout, Properties, the
             // note-input bar and the playback bar, leaving the page and
             // this strip.
-            ToolBtn { id: focusBtn; text: "⤢"; toolTipTitle: qsTrc("notation", "Focus mode — hide panels and toolbars"); accentButton: root.focusMode; onClicked: root.setFocusMode(!root.focusMode) }
+            ToolBtn { id: focusBtn; icon: root.focusMode ? IconCode.EYE_OPEN : IconCode.EYE_CLOSED; label: qsTrc("notation", "Focus"); toolTipTitle: qsTrc("notation", "Focus mode — hide panels and toolbars"); accentButton: root.focusMode; onClicked: root.setFocusMode(!root.focusMode) }
 
-            Rectangle { width: root.horizontal ? 1 : root.btn; height: root.horizontal ? root.btn : 1; color: ui.theme.strokeColor; opacity: 0.5 }
+            Rectangle { width: root.horizontal ? 1 : root.cellW; height: root.horizontal ? root.cellH : 1; color: ui.theme.strokeColor; opacity: 0.5 }
 
             // Annotate toggle
-            ToolBtn { icon: IconCode.EDIT; toolTipTitle: qsTrc("notation", "Annotate (Ctrl+Alt+A)"); accentButton: root.view.annotationActive; onClicked: root.view.toggleAnnotation() }
+            ToolBtn { icon: IconCode.BRUSH; label: qsTrc("notation", "Ink"); toolTipTitle: qsTrc("notation", "Annotate (Ctrl+Alt+A)"); accentButton: root.view.annotationActive; onClicked: root.view.toggleAnnotation() }
 
             // Write (recognize handwriting -> notation) toggle
-            ToolBtn { text: "♪"; toolTipTitle: qsTrc("notation", "Write notation (Ctrl+Alt+W)"); accentButton: root.view.writeModeActive; onClicked: root.view.toggleWriteMode() }
+            ToolBtn { icon: IconCode.MUSIC_NOTES; label: qsTrc("notation", "Write"); toolTipTitle: qsTrc("notation", "Write notation (Ctrl+Alt+W)"); accentButton: root.view.writeModeActive; onClicked: root.view.toggleWriteMode() }
 
             // Sticky "Shift" for additive lasso (multi-select) — a pen-friendly modifier
-            ToolBtn { visible: root.view.writeModeActive; text: "⊕"; toolTipTitle: qsTrc("notation", "Add to selection (multi-select loops)"); accentButton: root.view.addToSelectionActive; onClicked: root.view.toggleAddToSelection() }
+            ToolBtn { visible: root.view.writeModeActive; icon: IconCode.PLUS; label: qsTrc("notation", "Multi"); toolTipTitle: qsTrc("notation", "Add to selection (multi-select loops)"); accentButton: root.view.addToSelectionActive; onClicked: root.view.toggleAddToSelection() }
 
             // --- Ink tools (only while annotating) ---
-            ToolBtn { visible: root.view.annotationActive; icon: IconCode.EDIT; toolTipTitle: qsTrc("notation", "Pen (P)"); accentButton: root.view.annotationTool === 0; onClicked: root.view.annotationTool = 0 }
-            ToolBtn { visible: root.view.annotationActive; icon: IconCode.BRUSH; toolTipTitle: qsTrc("notation", "Highlighter (H)"); accentButton: root.view.annotationTool === 1; onClicked: root.view.annotationTool = 1 }
-            ToolBtn { visible: root.view.annotationActive; text: "⌫"; toolTipTitle: qsTrc("notation", "Eraser (E)"); accentButton: root.view.annotationTool === 2; onClicked: root.view.annotationTool = 2 }
-            ToolBtn { visible: root.view.annotationActive; icon: IconCode.UNDO; enabled: root.view.annotationCanUndo; toolTipTitle: qsTrc("notation", "Undo"); onClicked: root.view.annotationUndo() }
-            ToolBtn { visible: root.view.annotationActive; icon: IconCode.REDO; enabled: root.view.annotationCanRedo; toolTipTitle: qsTrc("notation", "Redo"); onClicked: root.view.annotationRedo() }
-            ToolBtn { visible: root.view.annotationActive; icon: IconCode.DELETE_TANK; toolTipTitle: qsTrc("notation", "Clear all annotations"); onClicked: root.view.annotationClear() }
+            ToolBtn { visible: root.view.annotationActive; icon: IconCode.EDIT; label: qsTrc("notation", "Pen"); toolTipTitle: qsTrc("notation", "Pen (P)"); accentButton: root.view.annotationTool === 0; onClicked: root.view.annotationTool = 0 }
+            ToolBtn { visible: root.view.annotationActive; icon: IconCode.MARKER; label: qsTrc("notation", "Marker"); toolTipTitle: qsTrc("notation", "Highlighter (H)"); accentButton: root.view.annotationTool === 1; onClicked: root.view.annotationTool = 1 }
+            ToolBtn { visible: root.view.annotationActive; icon: IconCode.CLOSE_X_ROUNDED; label: qsTrc("notation", "Eraser"); toolTipTitle: qsTrc("notation", "Eraser (E)"); accentButton: root.view.annotationTool === 2; onClicked: root.view.annotationTool = 2 }
+            ToolBtn { visible: root.view.annotationActive; icon: IconCode.UNDO; label: qsTrc("notation", "Undo ink"); enabled: root.view.annotationCanUndo; toolTipTitle: qsTrc("notation", "Undo the last ink stroke"); onClicked: root.view.annotationUndo() }
+            ToolBtn { visible: root.view.annotationActive; icon: IconCode.REDO; label: qsTrc("notation", "Redo ink"); enabled: root.view.annotationCanRedo; toolTipTitle: qsTrc("notation", "Redo the last ink stroke"); onClicked: root.view.annotationRedo() }
+            ToolBtn { visible: root.view.annotationActive; icon: IconCode.DELETE_TANK; label: qsTrc("notation", "Clear"); toolTipTitle: qsTrc("notation", "Clear all annotations"); onClicked: root.view.annotationClear() }
 
             // Colour — current swatch, tap cycles the palette
-            Rectangle {
+            Item {
                 visible: root.view.annotationActive
-                width: root.btn; height: root.btn
-                radius: 4
-                color: root.view.annotationColor
-                border.width: 1; border.color: ui.theme.strokeColor
+                width: root.cellW; height: root.cellH
+                Rectangle {
+                    anchors.horizontalCenter: parent.horizontalCenter
+                    y: 2
+                    width: root.btn - 4; height: root.btn - 4
+                    radius: 4
+                    color: root.view.annotationColor
+                    border.width: 1; border.color: ui.theme.strokeColor
+                }
+                StyledTextLabel {
+                    visible: root.showLabels
+                    anchors.horizontalCenter: parent.horizontalCenter
+                    anchors.bottom: parent.bottom
+                    anchors.bottomMargin: 3
+                    font: Qt.font({ family: ui.theme.bodyFont.family, pixelSize: root.labelPx })
+                    text: qsTrc("notation", "Colour")
+                }
                 MouseArea {
                     anchors.fill: parent
                     onClicked: {
@@ -373,17 +451,31 @@ Item {
             }
 
             // Width — current dot, tap cycles presets
-            Rectangle {
+            Item {
                 visible: root.view.annotationActive
-                width: root.btn; height: root.btn
-                radius: 4
-                color: "transparent"; border.width: 1; border.color: ui.theme.strokeColor
+                width: root.cellW; height: root.cellH
                 Rectangle {
-                    anchors.centerIn: parent
-                    width: parent.width - 8
-                    height: Math.max(2, root.view.annotationWidth / 4)
-                    radius: height / 2
-                    color: ui.theme.fontPrimaryColor
+                    id: widthBox
+                    anchors.horizontalCenter: parent.horizontalCenter
+                    y: 2
+                    width: root.btn - 4; height: root.btn - 4
+                    radius: 4
+                    color: "transparent"; border.width: 1; border.color: ui.theme.strokeColor
+                    Rectangle {
+                        anchors.centerIn: parent
+                        width: parent.width - 8
+                        height: Math.max(2, root.view.annotationWidth / 4)
+                        radius: height / 2
+                        color: ui.theme.fontPrimaryColor
+                    }
+                }
+                StyledTextLabel {
+                    visible: root.showLabels
+                    anchors.horizontalCenter: parent.horizontalCenter
+                    anchors.bottom: parent.bottom
+                    anchors.bottomMargin: 3
+                    font: Qt.font({ family: ui.theme.bodyFont.family, pixelSize: root.labelPx })
+                    text: qsTrc("notation", "Width")
                 }
                 MouseArea {
                     anchors.fill: parent
@@ -540,6 +632,19 @@ Item {
                     accentButton: Math.abs(root.uiScale - 2.0) < 0.01
                     onClicked: { root.uiScale = 2.0; Qt.callLater(root.applyDock) }
                 }
+            }
+
+            Rectangle { width: menuCol.colw; height: 1; color: ui.theme.strokeColor; opacity: 0.5 }
+
+            // Labels are the point of the redesign, so they default on --
+            // but they roughly double the width of the strip, and on a
+            // small float that matters. One tap to get the compact icons
+            // back.
+            FlatButton {
+                width: menuCol.colw
+                text: root.showLabels ? qsTrc("notation", "Labels: on") : qsTrc("notation", "Labels: off")
+                accentButton: root.showLabels
+                onClicked: { root.showLabels = !root.showLabels; Qt.callLater(root.applyDock) }
             }
 
             Rectangle { width: menuCol.colw; height: 1; color: ui.theme.strokeColor; opacity: 0.5 }
