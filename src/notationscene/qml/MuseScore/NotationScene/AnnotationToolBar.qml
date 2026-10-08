@@ -112,45 +112,53 @@ Item {
         Qt.callLater(reportGeometry)
     }
 
-    property real uiScale: 1.0
-    readonly property real btn: Math.round(30 * uiScale)
-    readonly property int glyph: Math.round(16 * uiScale)
-    readonly property real gap: Math.max(2, Math.round(3 * uiScale))
+    // Size steps, written out rather than derived from one multiplier.
+    // A single scale factor grew the icon, the label, the padding and the
+    // row height all at once, so "Large" multiplied the entire strip: at
+    // 2.0 it measured 776 QML units of an 1102-wide window -- 70% of the
+    // screen to hold a toolbar. Shrink the window and it reached 1421,
+    // wider than the panel. The touch target is the thing that needs to
+    // grow with the size setting; the text only has to stay readable.
+    property int sizeStep: 0                                // 0 = S, 1 = M, 2 = L
+    readonly property var btnSteps:   [28, 36, 44]
+    readonly property var glyphSteps: [15, 19, 23]
+    readonly property var labelSteps: [10, 12, 14]
+    readonly property real btn: btnSteps[sizeStep]
+    readonly property int glyph: glyphSteps[sizeStep]
+    readonly property int labelPx: labelSteps[sizeStep]
+    readonly property real gap: 3
+    // Only the dock menu's own width and the active outline still scale.
+    readonly property real uiScale: [1.0, 1.3, 1.6][sizeStep]
 
     // Labels, because this strip is used with a pen and a pen does not
-    // hover. Every button carried a toolTipTitle and not one of them could
-    // ever be read: a tooltip needs a pointer resting on the control. The
-    // icons were therefore the whole interface -- and two pairs of them
-    // (annotate/pen, score undo/ink undo) were drawn identically.
+    // hover. Every button carried a toolTipTitle and not one of them
+    // could ever be read.
     property bool showLabels: true
-    readonly property int labelPx: Math.max(9, Math.round(10 * uiScale))
 
-    // Cell width comes from MEASURING the longest label, not from some
-    // multiple of the button size. Guessing a multiple is how the export
-    // button came to render "PDF" as "PD".
+    // Secondary controls are behind this. Twenty-five labelled buttons
+    // cannot be made small -- the only honest way to shrink the strip is
+    // to show fewer of them, so the ten that get used stay out and the
+    // rest are one tap away.
+    property bool showMore: false
+
     readonly property var allLabels: [
         "Play", "Stop", "Rewind", "Loop", "Metronome",
         "Zoom out", "Zoom in", "Page view", "Hide panels",
-        "Save", "Export",
-        "Undo", "Redo",
+        "Save", "Export", "Undo", "Redo",
         "Note input", "Write", "Multi select",
         "Draw", "Pen", "Marker", "Erase",
-        "Undo draw", "Redo draw", "Erase all", "Colour", "Size"
+        "Undo draw", "Redo draw", "Erase all", "Colour", "Size",
+        "More", "Less"
     ]
-    // The widest WORD, not the widest label: labels wrap to two lines, so
-    // "Hide panels" costs the width of "panels", not of the whole phrase.
-    // That is what makes room for words instead of abbreviations -- the
-    // first attempt at this shortened everything to fit on one line and
-    // produced "Metro", "Multi" and "Ink", which is the same problem as
-    // "PD" wearing a different hat.
-    readonly property string longestWord: {
+    // Labels sit BESIDE the icon on the vertical dock, so each one is a
+    // single line and the widest whole label sets the width. Stacking
+    // them underneath instead cost a second line of height on every row
+    // and is what turned the strip into a wall.
+    readonly property string longestLabel: {
         var best = ""
         for (var i = 0; i < allLabels.length; ++i) {
-            var parts = allLabels[i].split(" ")
-            for (var j = 0; j < parts.length; ++j) {
-                if (parts[j].length > best.length) {
-                    best = parts[j]
-                }
+            if (allLabels[i].length > best.length) {
+                best = allLabels[i]
             }
         }
         return best
@@ -158,14 +166,16 @@ Item {
     TextMetrics {
         id: labelMetrics
         font: Qt.font({ family: ui.theme.bodyFont.family, pixelSize: root.labelPx })
-        text: root.longestWord
+        text: root.longestLabel
     }
-    readonly property real cellW: root.showLabels
-        ? Math.max(root.btn, Math.ceil(labelMetrics.width) + 10)
-        : root.btn
-    readonly property real cellH: root.showLabels
-        ? root.btn + 2 * root.labelPx + 12      // two lines of label
-        : root.btn
+    readonly property real labelW: Math.ceil(labelMetrics.width)
+    readonly property real cellW: !showLabels
+        ? btn
+        : (root.horizontal ? Math.max(btn, labelW + 8) : btn + 6 + labelW + 8)
+    readonly property real cellH: !showLabels
+        ? btn
+        : (root.horizontal ? btn + labelPx + 8 : btn)
+    readonly property real headH: showLabels ? Math.round(labelPx * 1.5) + 2 : 7
 
     readonly property var palette: ["#1a1a1a", "#e03030", "#2a6be0", "#28a745", "#f0a020", "#a020c0"]
     readonly property var widths: [6, 15, 30]
@@ -186,9 +196,13 @@ Item {
     component Section: Grid {
         property string title: ""
 
+        // An untitled group is just a rule, not a heading. Giving it the
+        // full heading height cost ~20px and at Large that was the
+        // difference between the strip fitting one column and needing
+        // two.
         readonly property real headExtent: root.horizontal
             ? 0
-            : (root.showLabels ? Math.round(root.labelPx * 1.9) : 8)
+            : (title === "" ? 5 : root.headH)
         // Everything except the heading item.
         readonly property int cells: Math.max(1, visibleChildren.length - 1)
         readonly property real needed: headExtent + cells * (root.cellH + root.gap)
@@ -225,7 +239,7 @@ Item {
                 opacity: 0.6
                 font: Qt.font({
                     family: ui.theme.bodyFont.family,
-                    pixelSize: Math.max(8, Math.round(root.labelPx * 0.9)),
+                    pixelSize: Math.max(8, Math.round(root.labelPx * 0.85)),
                     capitalization: Font.AllUppercase,
                     bold: true
                 })
@@ -246,8 +260,11 @@ Item {
         // tool strip. Adding a label silently switches it into that mode.
         minWidth: 0
         margins: 2
-        orientation: Qt.Vertical
-        maximumLineCount: 2
+        // Beside the icon when the strip is vertical, underneath when it
+        // is horizontal -- whichever keeps the strip thin on the axis it
+        // is docked against.
+        orientation: root.horizontal ? Qt.Vertical : Qt.Horizontal
+        maximumLineCount: 1
         text: root.showLabels ? label : ""
         accessible.name: label !== "" ? label : toolTipTitle
         // textFont, NOT font: FlatButton declares `property font iconFont`
@@ -321,7 +338,7 @@ Item {
                                    "focus=" + btnCentre(focusBtn)
                                    + ";save=" + btnCentre(saveBtn)
                                    + ";note=" + btnCentre(noteBtn)
-                                   + ";handle=" + btnCentre(handle))
+                                   + ";handle=" + btnCentre(menuBtn))
     }
     onXChanged: Qt.callLater(reportGeometry)
     onYChanged: Qt.callLater(reportGeometry)
@@ -407,29 +424,51 @@ Item {
             height: root.horizontal ? childrenRect.height : root.maxExtent
             spacing: root.gap
 
-            // Drag handle
-            Rectangle {
-                id: handle
-                width: root.horizontal ? 12 : root.cellW
-                height: root.horizontal ? root.cellH : 12
-                color: "transparent"
-                Grid {
-                    anchors.centerIn: parent
-                    rows: root.horizontal ? 2 : 1
-                    columns: root.horizontal ? 1 : 2
-                    rowSpacing: 3
-                    columnSpacing: 3
-                    Repeater { model: 2; delegate: Rectangle { width: 4; height: 4; radius: 2; color: ui.theme.fontPrimaryColor; opacity: 0.6 } }
+            // Strip header: a grip you drag, and a button that opens the
+            // dock menu. These used to be the same control -- two dots
+            // that moved the strip when dragged and opened a menu when
+            // tapped. Nothing on screen said either was possible, and the
+            // two gestures on one 12px target meant a slightly draggy tap
+            // did the wrong one.
+            Item {
+                width: root.horizontal ? root.btn * 2 : root.cellW
+                height: root.horizontal ? root.cellH : root.btn
+
+                Item {
+                    id: handle
+                    anchors.left: parent.left
+                    width: root.btn
+                    height: parent.height
+
+                    StyledIconLabel {
+                        anchors.centerIn: parent
+                        iconCode: IconCode.TOOLBAR_GRIP
+                        font: Qt.font({ family: ui.theme.iconsFont.family, pixelSize: root.glyph })
+                        opacity: 0.65
+                    }
+                    MouseArea {
+                        anchors.fill: parent
+                        cursorShape: Qt.SizeAllCursor
+                        drag.target: root
+                        drag.minimumX: 0
+                        drag.minimumY: 44   // stay below the window title bar (its drag moves the whole window)
+                        drag.maximumX: root.parent ? Math.max(0, root.parent.width - root.width) : 0
+                        drag.maximumY: root.parent ? Math.max(0, root.parent.height - root.height) : 0
+                    }
                 }
-                MouseArea {
-                    anchors.fill: parent
-                    cursorShape: Qt.SizeAllCursor
-                    drag.target: root
-                    drag.minimumX: 0
-                    drag.minimumY: 44   // stay below the window title bar (its drag moves the whole window)
-                    drag.maximumX: root.parent ? Math.max(0, root.parent.width - root.width) : 0
-                    drag.maximumY: root.parent ? Math.max(0, root.parent.height - root.height) : 0
-                    onClicked: root.menuOpen = !root.menuOpen   // tap handle => dock menu
+
+                FlatButton {
+                    id: menuBtn
+                    anchors.right: parent.right
+                    width: root.btn
+                    height: parent.height
+                    minWidth: 0
+                    margins: 0
+                    transparent: true
+                    icon: IconCode.SETTINGS_COG
+                    iconFont: Qt.font({ family: ui.theme.iconsFont.family, pixelSize: root.glyph })
+                    toolTipTitle: qsTrc("notation", "Toolbar options")
+                    onClicked: root.menuOpen = !root.menuOpen
                 }
             }
 
@@ -437,23 +476,16 @@ Item {
                 title: qsTrc("notation", "Play")
                 ToolBtn { icon: IconCode.PLAY; label: qsTrc("notation", "Play"); toolTipTitle: qsTrc("notation", "Play / Pause"); onClicked: root.view.dispatchAction("play") }
                 ToolBtn { icon: IconCode.STOP; label: qsTrc("notation", "Stop"); toolTipTitle: qsTrc("notation", "Stop"); onClicked: root.view.dispatchAction("stop") }
-                ToolBtn { icon: IconCode.REWIND; label: qsTrc("notation", "Rewind"); toolTipTitle: qsTrc("notation", "Rewind to start"); onClicked: root.view.dispatchAction("rewind") }
-                ToolBtn { icon: IconCode.LOOP; label: qsTrc("notation", "Loop"); toolTipTitle: qsTrc("notation", "Toggle loop"); onClicked: root.view.dispatchAction("loop") }
-                ToolBtn { icon: IconCode.METRONOME; label: qsTrc("notation", "Metronome"); toolTipTitle: qsTrc("notation", "Toggle metronome"); onClicked: root.view.dispatchAction("metronome") }
+                ToolBtn { visible: root.showMore; icon: IconCode.REWIND; label: qsTrc("notation", "Rewind"); toolTipTitle: qsTrc("notation", "Rewind to start"); onClicked: root.view.dispatchAction("rewind") }
+                ToolBtn { visible: root.showMore; icon: IconCode.LOOP; label: qsTrc("notation", "Loop"); toolTipTitle: qsTrc("notation", "Toggle loop"); onClicked: root.view.dispatchAction("loop") }
+                ToolBtn { visible: root.showMore; icon: IconCode.METRONOME; label: qsTrc("notation", "Metronome"); toolTipTitle: qsTrc("notation", "Toggle metronome"); onClicked: root.view.dispatchAction("metronome") }
             }
 
             Section {
-                title: qsTrc("notation", "View")
-                ToolBtn { icon: IconCode.ZOOM_OUT; label: qsTrc("notation", "Zoom out"); toolTipTitle: qsTrc("notation", "Zoom out"); onClicked: root.view.dispatchAction("zoomout") }
-                ToolBtn { icon: IconCode.ZOOM_IN; label: qsTrc("notation", "Zoom in"); toolTipTitle: qsTrc("notation", "Zoom in"); onClicked: root.view.dispatchAction("zoomin") }
-                ToolBtn { icon: IconCode.PAGE_VIEW; label: qsTrc("notation", "Page view"); toolTipTitle: qsTrc("notation", "Page / continuous view"); onClicked: root.view.toggleViewMode() }
-                ToolBtn { id: focusBtn; icon: root.focusMode ? IconCode.EYE_OPEN : IconCode.EYE_CLOSED; label: qsTrc("notation", "Hide panels"); toolTipTitle: qsTrc("notation", "Focus mode — hide panels and toolbars"); accentButton: root.focusMode; onClicked: root.setFocusMode(!root.focusMode) }
-            }
-
-            Section {
-                title: qsTrc("notation", "File")
-                ToolBtn { id: saveBtn; icon: IconCode.SAVE; label: qsTrc("notation", "Save"); toolTipTitle: qsTrc("notation", "Save"); onClicked: root.view.dispatchAction("file-save") }
-                ToolBtn { icon: IconCode.SHARE_FILE; label: qsTrc("notation", "Export"); toolTipTitle: qsTrc("notation", "Export to PDF / audio…"); onClicked: root.view.dispatchAction("file-export") }
+                title: qsTrc("notation", "Notes")
+                ToolBtn { id: noteBtn; icon: IconCode.NOTE_QUARTER; label: qsTrc("notation", "Note input"); toolTipTitle: qsTrc("notation", "Note input (N)"); accentButton: root.view.isActionChecked("note-input"); onClicked: root.view.dispatchAction("note-input") }
+                ToolBtn { icon: IconCode.MUSIC_NOTES; label: qsTrc("notation", "Write"); toolTipTitle: qsTrc("notation", "Write notation by hand (Ctrl+Alt+W)"); accentButton: root.view.writeModeActive; onClicked: root.view.toggleWriteMode() }
+                ToolBtn { visible: root.view.writeModeActive; icon: IconCode.PLUS; label: qsTrc("notation", "Multi select"); toolTipTitle: qsTrc("notation", "Add to selection (multi-select loops)"); accentButton: root.view.addToSelectionActive; onClicked: root.view.toggleAddToSelection() }
             }
 
             Section {
@@ -464,13 +496,16 @@ Item {
                 title: qsTrc("notation", "Edit")
                 ToolBtn { icon: IconCode.UNDO; label: qsTrc("notation", "Undo"); toolTipTitle: qsTrc("notation", "Undo"); onClicked: root.view.dispatchAction("action://notation/undo") }
                 ToolBtn { icon: IconCode.REDO; label: qsTrc("notation", "Redo"); toolTipTitle: qsTrc("notation", "Redo"); onClicked: root.view.dispatchAction("action://notation/redo") }
+                ToolBtn { id: saveBtn; icon: IconCode.SAVE; label: qsTrc("notation", "Save"); toolTipTitle: qsTrc("notation", "Save"); onClicked: root.view.dispatchAction("file-save") }
+                ToolBtn { visible: root.showMore; icon: IconCode.SHARE_FILE; label: qsTrc("notation", "Export"); toolTipTitle: qsTrc("notation", "Export to PDF / audio…"); onClicked: root.view.dispatchAction("file-export") }
             }
 
             Section {
-                title: qsTrc("notation", "Notes")
-                ToolBtn { id: noteBtn; icon: IconCode.NOTE_QUARTER; label: qsTrc("notation", "Note input"); toolTipTitle: qsTrc("notation", "Note input (N)"); accentButton: root.view.isActionChecked("note-input"); onClicked: root.view.dispatchAction("note-input") }
-                ToolBtn { icon: IconCode.MUSIC_NOTES; label: qsTrc("notation", "Write"); toolTipTitle: qsTrc("notation", "Write notation by hand (Ctrl+Alt+W)"); accentButton: root.view.writeModeActive; onClicked: root.view.toggleWriteMode() }
-                ToolBtn { visible: root.view.writeModeActive; icon: IconCode.PLUS; label: qsTrc("notation", "Multi select"); toolTipTitle: qsTrc("notation", "Add to selection (multi-select loops)"); accentButton: root.view.addToSelectionActive; onClicked: root.view.toggleAddToSelection() }
+                title: qsTrc("notation", "View")
+                ToolBtn { id: focusBtn; icon: root.focusMode ? IconCode.EYE_OPEN : IconCode.EYE_CLOSED; label: qsTrc("notation", "Hide panels"); toolTipTitle: qsTrc("notation", "Focus mode — hide panels and toolbars"); accentButton: root.focusMode; onClicked: root.setFocusMode(!root.focusMode) }
+                ToolBtn { visible: root.showMore; icon: IconCode.ZOOM_OUT; label: qsTrc("notation", "Zoom out"); toolTipTitle: qsTrc("notation", "Zoom out"); onClicked: root.view.dispatchAction("zoomout") }
+                ToolBtn { visible: root.showMore; icon: IconCode.ZOOM_IN; label: qsTrc("notation", "Zoom in"); toolTipTitle: qsTrc("notation", "Zoom in"); onClicked: root.view.dispatchAction("zoomin") }
+                ToolBtn { visible: root.showMore; icon: IconCode.PAGE_VIEW; label: qsTrc("notation", "Page view"); toolTipTitle: qsTrc("notation", "Page / continuous view"); onClicked: root.view.toggleViewMode() }
             }
 
             Section {
@@ -482,9 +517,8 @@ Item {
             }
 
             Section {
-                // Separate from "Draw" so the group stays short enough to
-                // fit one column, and because these act on the ink, not
-                // on the score: the Edit undo above is a different stack.
+                // Separate from "Draw" because these act on the ink, not
+                // on the score: the Undo in Edit is a different stack.
                 title: qsTrc("notation", "Ink")
                 visible: root.view.annotationActive
                 ToolBtn { icon: IconCode.UNDO; label: qsTrc("notation", "Undo draw"); enabled: root.view.annotationCanUndo; toolTipTitle: qsTrc("notation", "Undo the last ink stroke"); onClicked: root.view.annotationUndo() }
@@ -495,18 +529,20 @@ Item {
                 Item {
                     width: root.cellW; height: root.cellH
                     Rectangle {
-                        anchors.horizontalCenter: parent.horizontalCenter
-                        y: 2
-                        width: root.btn - 4; height: root.btn - 4
+                        id: colourSwatch
+                        anchors.left: parent.left
+                        anchors.leftMargin: Math.round((root.btn - width) / 2)
+                        anchors.verticalCenter: parent.verticalCenter
+                        width: root.btn - 10; height: root.btn - 10
                         radius: 4
                         color: root.view.annotationColor
                         border.width: 1; border.color: ui.theme.strokeColor
                     }
                     StyledTextLabel {
                         visible: root.showLabels
-                        anchors.horizontalCenter: parent.horizontalCenter
-                        anchors.bottom: parent.bottom
-                        anchors.bottomMargin: 4
+                        anchors.left: parent.left
+                        anchors.leftMargin: root.btn + 6
+                        anchors.verticalCenter: parent.verticalCenter
                         font: Qt.font({ family: ui.theme.bodyFont.family, pixelSize: root.labelPx })
                         text: qsTrc("notation", "Colour")
                     }
@@ -526,14 +562,15 @@ Item {
                 Item {
                     width: root.cellW; height: root.cellH
                     Rectangle {
-                        anchors.horizontalCenter: parent.horizontalCenter
-                        y: 2
-                        width: root.btn - 4; height: root.btn - 4
+                        anchors.left: parent.left
+                        anchors.leftMargin: Math.round((root.btn - width) / 2)
+                        anchors.verticalCenter: parent.verticalCenter
+                        width: root.btn - 10; height: root.btn - 10
                         radius: 4
                         color: "transparent"; border.width: 1; border.color: ui.theme.strokeColor
                         Rectangle {
                             anchors.centerIn: parent
-                            width: parent.width - 8
+                            width: parent.width - 6
                             height: Math.max(2, root.view.annotationWidth / 4)
                             radius: height / 2
                             color: ui.theme.fontPrimaryColor
@@ -541,9 +578,9 @@ Item {
                     }
                     StyledTextLabel {
                         visible: root.showLabels
-                        anchors.horizontalCenter: parent.horizontalCenter
-                        anchors.bottom: parent.bottom
-                        anchors.bottomMargin: 4
+                        anchors.left: parent.left
+                        anchors.leftMargin: root.btn + 6
+                        anchors.verticalCenter: parent.verticalCenter
                         font: Qt.font({ family: ui.theme.bodyFont.family, pixelSize: root.labelPx })
                         text: qsTrc("notation", "Size")
                     }
@@ -557,6 +594,17 @@ Item {
                             root.view.annotationWidth = root.widths[(ci + 1) % root.widths.length]
                         }
                     }
+                }
+            }
+
+            Section {
+                title: ""
+                ToolBtn {
+                    icon: root.showMore ? IconCode.SMALL_ARROW_UP : IconCode.SMALL_ARROW_DOWN
+                    label: root.showMore ? qsTrc("notation", "Less") : qsTrc("notation", "More")
+                    accentButton: root.showMore
+                    toolTipTitle: qsTrc("notation", "Show the less-used tools")
+                    onClicked: { root.showMore = !root.showMore; Qt.callLater(root.applyDock) }
                 }
             }
         }
@@ -686,22 +734,22 @@ Item {
                     width: parent.cell
                     text: qsTrc("notation", "S")
                     toolTipTitle: qsTrc("notation", "Small toolbar")
-                    accentButton: Math.abs(root.uiScale - 1.0) < 0.01
-                    onClicked: { root.uiScale = 1.0; Qt.callLater(root.applyDock) }
+                    accentButton: root.sizeStep === 0
+                    onClicked: { root.sizeStep = 0; Qt.callLater(root.applyDock) }
                 }
                 FlatButton {
                     width: parent.cell
                     text: qsTrc("notation", "M")
                     toolTipTitle: qsTrc("notation", "Medium toolbar")
-                    accentButton: Math.abs(root.uiScale - 1.5) < 0.01
-                    onClicked: { root.uiScale = 1.5; Qt.callLater(root.applyDock) }
+                    accentButton: root.sizeStep === 1
+                    onClicked: { root.sizeStep = 1; Qt.callLater(root.applyDock) }
                 }
                 FlatButton {
                     width: parent.cell
                     text: qsTrc("notation", "L")
                     toolTipTitle: qsTrc("notation", "Large toolbar")
-                    accentButton: Math.abs(root.uiScale - 2.0) < 0.01
-                    onClicked: { root.uiScale = 2.0; Qt.callLater(root.applyDock) }
+                    accentButton: root.sizeStep === 2
+                    onClicked: { root.sizeStep = 2; Qt.callLater(root.applyDock) }
                 }
             }
 
