@@ -1313,9 +1313,17 @@ void AbstractNotationPaintView::writeAnnotationStatus()
     }
     QFile f(m_annotationStatusPath);
     if (f.open(QIODevice::WriteOnly | QIODevice::Truncate)) {
-        const QString s = QString("{\"annotationMode\":%1,\"strokes\":%2}")
+        // Toolbar geometry goes in here so a test can tap the handle and the
+        // size buttons by position instead of guessing offsets from the
+        // screen edge. That guess broke the moment the strip wrapped into
+        // two columns: "screen width - 36" landed in the second column and
+        // the tap meant for the dock handle hit a tool button, which the
+        // test then reported as "the popover did not open".
+        const QString s = QString("{\"annotationMode\":%1,\"strokes\":%2,"
+                                  "\"toolbar\":{\"x\":%3,\"y\":%4,\"w\":%5,\"h\":%6,\"cols\":%7}}")
                           .arg(m_annotationMode ? "true" : "false")
-                          .arg(m_annotationLayer->strokeCount());
+                          .arg(m_annotationLayer->strokeCount())
+                          .arg(m_tbX).arg(m_tbY).arg(m_tbW).arg(m_tbH).arg(m_tbCols);
         f.write(s.toUtf8());
     }
 }
@@ -1547,6 +1555,15 @@ void AbstractNotationPaintView::annotationClear()
 void AbstractNotationPaintView::dispatchAction(const QString& code)
 {
     dispatcher()->dispatch(code.toStdString());
+}
+
+void AbstractNotationPaintView::reportToolbarGeometry(int x, int y, int w, int hgt, int cols)
+{
+    if (m_tbX == x && m_tbY == y && m_tbW == w && m_tbH == hgt && m_tbCols == cols) {
+        return;
+    }
+    m_tbX = x; m_tbY = y; m_tbW = w; m_tbH = hgt; m_tbCols = cols;
+    writeAnnotationStatus();
 }
 
 bool AbstractNotationPaintView::isActionChecked(const QString& code) const

@@ -108,6 +108,7 @@ Item {
         }
         focusMode = on
         Qt.callLater(applyDock)
+        Qt.callLater(reportGeometry)
     }
 
     property real uiScale: 1.0
@@ -152,6 +153,26 @@ Item {
         // while claiming to be docked.
         Qt.callLater(applyDock)
     }
+
+    // Publish where the strip is, so a test can tap the handle and the size
+    // buttons from measured geometry rather than from an offset off the
+    // screen edge -- which stopped being the strip at all once it wrapped
+    // into two columns.
+    //
+    // The column count comes from the laid-out width: Flow decides it, and
+    // nothing else in the file knows how many columns there are.
+    function reportGeometry() {
+        if (!view || !bg) {
+            return
+        }
+        var per = root.btn + root.gap
+        var cols = root.horizontal ? 1 : Math.max(1, Math.round(bg.width / per))
+        view.reportToolbarGeometry(Math.round(root.x), Math.round(root.y),
+                                   Math.round(bg.width), Math.round(bg.height), cols)
+    }
+    onXChanged: Qt.callLater(reportGeometry)
+    onYChanged: Qt.callLater(reportGeometry)
+    onUiScaleChanged: Qt.callLater(reportGeometry)
 
     onDockEdgeChanged: Qt.callLater(applyDock)
     onWidthChanged: if (dockEdge !== "") applyDock()
@@ -210,6 +231,9 @@ Item {
         color: ui.theme.backgroundPrimaryColor
         border.width: 1
         border.color: ui.theme.strokeColor
+
+        onWidthChanged: Qt.callLater(root.reportGeometry)
+        onHeightChanged: Qt.callLater(root.reportGeometry)
 
         MouseArea { anchors.fill: parent }   // absorb clicks on the strip body
 

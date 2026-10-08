@@ -91,6 +91,7 @@ class AbstractNotationPaintView : public muse::uicomponents::QuickPaintedView, p
     muse::ContextInject<muse::ui::IUiContextResolver> uiContextResolver = { this };
     muse::ContextInject<muse::ui::IMainWindow> mainWindow = { this };
     muse::ContextInject<muse::ui::IUiActionsRegister> actionsRegister = { this };
+    int m_tbX = 0, m_tbY = 0, m_tbW = 0, m_tbH = 0, m_tbCols = 0;
 
 public:
     explicit AbstractNotationPaintView(QQuickItem* parent = nullptr);
@@ -133,6 +134,13 @@ public:
     // that wants to HIDE a panel has to know whether it is showing --
     // dispatching blind turns hidden panels back on, which is the opposite
     // of what a "hide the chrome" button is for.
+    // Let the toolbar publish where it is. Tests cannot find it any other
+    // way: it is a QML Item inside this one window, so xdotool reports the
+    // editor's geometry, and locating it by colour does not work either --
+    // the strip's panel is 245,245,246 and the score page is 249,249,249.
+    // Four greys apart is not a discriminator, and threshold-tuning against
+    // it produced a "locator" that matched half the page.
+    Q_INVOKABLE void reportToolbarGeometry(int x, int y, int w, int hgt, int cols);
     Q_INVOKABLE bool isActionChecked(const QString& code) const;
     // Drive a toggle to a specific state, dispatching only when it differs.
     Q_INVOKABLE void setActionChecked(const QString& code, bool checked);
