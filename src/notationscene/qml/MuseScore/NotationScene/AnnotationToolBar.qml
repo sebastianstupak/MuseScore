@@ -76,8 +76,18 @@ Item {
     component ToolBtn: FlatButton {
         Layout.preferredWidth: root.btn
         Layout.preferredHeight: root.btn
-        iconFont.pixelSize: root.glyph
-        font.pixelSize: root.glyph
+        // textFont, NOT font: FlatButton declares `property font iconFont`
+        // and `property font textFont`, and has no plain `font`. Assigning
+        // to it is not a no-op -- QML refuses to load the component, which
+        // takes down NotationView, PublishPage, WindowContent and finally
+        // the whole main window: "Failed to load main qml file ... Cannot
+        // assign to non-existent property \"font\"". The app got as far as
+        // the splash screen and stopped there.
+        //
+        // Built with Qt.font() rather than the grouped form so the family
+        // comes from the theme and only the size is ours.
+        iconFont: Qt.font({ family: ui.theme.iconsFont.family, pixelSize: root.glyph })
+        textFont: Qt.font({ family: ui.theme.bodyFont.family, pixelSize: root.glyph })
     }
 
     // Float over the WHOLE window, not just the canvas.
