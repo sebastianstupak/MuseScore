@@ -408,9 +408,17 @@ Item {
     // It also made the handle a pure toggle with no way to tell open from
     // closed, which is what let a test tap the handle, see the menu VANISH,
     // and report that it had opened.
+    // A child of root at z 9, NOT a sibling of root. As a sibling it sat
+    // above the whole toolbar -- including the menu, whose z 10 only
+    // orders it against its own siblings -- so every tap meant for S, M or
+    // L would have dismissed the menu instead of pressing the button. Here
+    // the menu is above it and the strip below, which is the behaviour a
+    // popup is supposed to have.
     MouseArea {
-        parent: root.parent
-        anchors.fill: parent
+        x: -root.x
+        y: -root.y
+        width: root.parent ? root.parent.width : 0
+        height: root.parent ? root.parent.height : 0
         z: 9
         visible: root.menuOpen
         enabled: root.menuOpen
