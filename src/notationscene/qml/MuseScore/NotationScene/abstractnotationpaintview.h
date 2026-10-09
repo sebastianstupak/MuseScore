@@ -123,6 +123,7 @@ public:
     bool annotationCanUndo() const;
     bool annotationCanRedo() const;
 
+    Q_INVOKABLE void panViewByPixels(qreal dxPx, qreal dyPx);
     Q_INVOKABLE void cancelCurrentStroke();
     Q_INVOKABLE void setPointerMode();
     Q_INVOKABLE bool pointerModeActive() const;

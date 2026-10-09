@@ -1340,6 +1340,7 @@ void AbstractNotationPaintView::writeAnnotationStatus()
         // test then reported as "the popover did not open".
         const QString s = QString("{\"annotationMode\":%1,\"strokes\":%2,"
                                   "\"writeMode\":%13,"
+                                  "\"canvas\":{\"x\":%14,\"y\":%15,\"scale\":%16},"
                                   "\"toolbar\":{\"x\":%3,\"y\":%4,\"w\":%5,\"h\":%6,\"cols\":%7,"
                                   "\"winw\":%8,\"winh\":%9,\"menu\":%10,\"labels\":%11,"
                                   "\"buttons\":\"%12\"}}")
@@ -1349,7 +1350,10 @@ void AbstractNotationPaintView::writeAnnotationStatus()
                           .arg(m_tbWinW).arg(m_tbWinH)
                           .arg(m_tbMenuOpen ? "true" : "false")
                           .arg(m_tbLabels ? "true" : "false").arg(m_tbButtons)
-                          .arg(m_writeMode ? "true" : "false");
+                          .arg(m_writeMode ? "true" : "false")
+                          .arg(QString::number(m_matrix.dx(), 'f', 2))
+                          .arg(QString::number(m_matrix.dy(), 'f', 2))
+                          .arg(QString::number(m_matrix.m11(), 'f', 4));
         f.write(s.toUtf8());
     }
 }
@@ -1537,6 +1541,22 @@ bool AbstractNotationPaintView::annotationCanRedo() const
 {
     const INotationPtr n = notation();
     return n && n->undoStack()->canRedo();
+}
+
+void AbstractNotationPaintView::panViewByPixels(qreal dxPx, qreal dyPx)
+{
+    // moveCanvas() takes LOGICAL units, not screen pixels. The scroll code
+    // next door has always known that -- it divides by the scale before
+    // calling it (width * scrollStep / scale) -- but the pinch handler
+    // passed the finger delta straight through, so the page moved by
+    // delta * scale. Wrong by the zoom factor, and differently wrong at
+    // every zoom level, which is what made two-finger panning feel fast
+    // and unpredictable rather than stuck to the fingers.
+    const qreal s = currentScaling();
+    if (qFuzzyIsNull(s)) {
+        return;
+    }
+    moveCanvas(dxPx / s, dyPx / s);
 }
 
 void AbstractNotationPaintView::cancelCurrentStroke()

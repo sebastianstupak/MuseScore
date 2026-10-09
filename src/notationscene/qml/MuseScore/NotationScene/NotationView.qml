@@ -246,7 +246,9 @@ FocusScope {
                 }
 
                 onPanView: function(dx, dy) {
-                    notationView.moveCanvas(dx, dy)
+                    // Pixels, not logical units -- moveCanvas() wants the
+                    // latter and the conversion needs the current zoom.
+                    notationView.panViewByPixels(dx, dy)
                 }
 
                 onScrollHorizontal: function(newPos) {
