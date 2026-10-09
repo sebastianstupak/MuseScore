@@ -35,11 +35,23 @@ PinchArea {
     property alias startVerticalScrollPosition: verticalScrollBar.position
 
     signal pinchToZoom(real scale, var pos)
+    // Two-finger drag. PinchArea has always reported the translation --
+    // pinch.center moves with the fingers -- and this component threw it
+    // away, keeping only the scale. So pinching zoomed but there was no
+    // way to move the page.
+    signal panView(real dx, real dy)
+    signal pinchBegan()
     signal scrollHorizontal(real newPos)
     signal scrollVertical(real newPos)
 
+    onPinchStarted: function(pinch) {
+        root.pinchBegan()
+    }
+
     onPinchUpdated: function(pinch) {
         root.pinchToZoom(pinch.scale / pinch.previousScale, pinch.center)
+        root.panView(pinch.center.x - pinch.previousCenter.x,
+                     pinch.center.y - pinch.previousCenter.y)
     }
 
     // A macOS feature which allows double-tapping with two fingers to zoom in or out

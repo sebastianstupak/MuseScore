@@ -236,6 +236,19 @@ FocusScope {
                     notationView.pinchToZoom(scale, pos)
                 }
 
+                // Two fingers move the page. The gesture necessarily
+                // begins as one finger, which in Draw mode has already
+                // started a line, so drop that stroke when the pinch is
+                // recognised rather than leaving it smeared across the
+                // score.
+                onPinchBegan: {
+                    notationView.cancelCurrentStroke()
+                }
+
+                onPanView: function(dx, dy) {
+                    notationView.moveCanvas(dx, dy)
+                }
+
                 onScrollHorizontal: function(newPos) {
                     notationView.scrollHorizontal(newPos)
                 }

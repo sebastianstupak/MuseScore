@@ -124,6 +124,17 @@ void AbstractNotationPaintView::load()
     // m_annotationLayer is owned by the current Notation; it is bound in onLoadNotation().
     m_annotationMode = qEnvironmentVariableIsSet("STYLUS_ANNOTATE");
     m_writeMode = qEnvironmentVariableIsSet("STYLUS_WRITE");
+    // These two are mutually exclusive everywhere else, but here they are
+    // assigned straight from the environment, around the setters that
+    // enforce it -- and the launcher sets BOTH by default. The result was
+    // a pen in write mode while the toolbar showed Draw lit, because
+    // mousePressEvent gives write the priority. Turning Draw off then
+    // cleared only m_annotationMode and the pen carried on drawing: the
+    // cancellation in setAnnotationActive only runs when turning annotate
+    // ON. Resolve it once, here, the same way the setters would.
+    if (m_annotationMode && m_writeMode) {
+        m_writeMode = false;
+    }
     m_annotationStatusPath = qEnvironmentVariable("STYLUS_ANNOTATE_STATUS");
     writeAnnotationStatus();   // signal that the notation view loaded (for tests)
     emit annotationStateChanged();   // let the toolbar's bindings pick up the initial state
@@ -1328,6 +1339,7 @@ void AbstractNotationPaintView::writeAnnotationStatus()
         // the tap meant for the dock handle hit a tool button, which the
         // test then reported as "the popover did not open".
         const QString s = QString("{\"annotationMode\":%1,\"strokes\":%2,"
+                                  "\"writeMode\":%13,"
                                   "\"toolbar\":{\"x\":%3,\"y\":%4,\"w\":%5,\"h\":%6,\"cols\":%7,"
                                   "\"winw\":%8,\"winh\":%9,\"menu\":%10,\"labels\":%11,"
                                   "\"buttons\":\"%12\"}}")
@@ -1336,7 +1348,8 @@ void AbstractNotationPaintView::writeAnnotationStatus()
                           .arg(m_tbX).arg(m_tbY).arg(m_tbW).arg(m_tbH).arg(m_tbCols)
                           .arg(m_tbWinW).arg(m_tbWinH)
                           .arg(m_tbMenuOpen ? "true" : "false")
-                          .arg(m_tbLabels ? "true" : "false").arg(m_tbButtons);
+                          .arg(m_tbLabels ? "true" : "false").arg(m_tbButtons)
+                          .arg(m_writeMode ? "true" : "false");
         f.write(s.toUtf8());
     }
 }
@@ -1524,6 +1537,45 @@ bool AbstractNotationPaintView::annotationCanRedo() const
 {
     const INotationPtr n = notation();
     return n && n->undoStack()->canRedo();
+}
+
+void AbstractNotationPaintView::cancelCurrentStroke()
+{
+    // A two-finger gesture starts as ONE finger: by the time the second
+    // lands, the first has already begun a stroke. Without this, panning
+    // while in Draw mode leaves a stray line across the page, and panning
+    // in Write mode leaves a dangling gesture for the recogniser.
+    if (!m_annotationLayer) {
+        return;
+    }
+    if (m_annotationLayer->isDrawing()) {
+        m_annotationLayer->takeCurrentStroke();   // discard, do not commit
+    }
+    m_writeStrokes.clear();
+    if (m_writeTimer) {
+        m_writeTimer->stop();
+    }
+    if (m_holdTimer) {
+        m_holdTimer->stop();
+    }
+    m_writeGesture = WriteGesture::None;
+    m_erasing = false;
+    scheduleRedraw();
+    writeAnnotationStatus();
+}
+
+void AbstractNotationPaintView::setPointerMode()
+{
+    // Put the pen back to selecting and dragging. Two independent toggles
+    // for three mutually exclusive modes left no way to say "neither" --
+    // you had to know which one was secretly still on.
+    setAnnotationActive(false);
+    setWriteModeActive(false);
+}
+
+bool AbstractNotationPaintView::pointerModeActive() const
+{
+    return !m_annotationMode && !m_writeMode;
 }
 
 void AbstractNotationPaintView::toggleAnnotation()

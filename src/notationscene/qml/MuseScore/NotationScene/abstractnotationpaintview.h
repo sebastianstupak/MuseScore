@@ -123,6 +123,9 @@ public:
     bool annotationCanUndo() const;
     bool annotationCanRedo() const;
 
+    Q_INVOKABLE void cancelCurrentStroke();
+    Q_INVOKABLE void setPointerMode();
+    Q_INVOKABLE bool pointerModeActive() const;
     Q_INVOKABLE void toggleAnnotation();
     Q_INVOKABLE void toggleWriteMode();   // pen gestures -> recognized notation
     Q_INVOKABLE void toggleAddToSelection();   // sticky "Shift" for additive lasso

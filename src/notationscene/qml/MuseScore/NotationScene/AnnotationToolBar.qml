@@ -146,7 +146,7 @@ Item {
         "Zoom out", "Zoom in", "Page view", "Hide panels",
         "Save", "Export", "Undo", "Redo",
         "Note input", "Write", "Multi select",
-        "Draw", "Pen", "Marker", "Erase",
+        "Select", "Draw", "Pen", "Marker", "Erase",
         "Undo draw", "Redo draw", "Erase all", "Colour", "Size",
         "More", "Less"
     ]
@@ -515,7 +515,6 @@ Item {
             Section {
                 title: qsTrc("notation", "Notes")
                 ToolBtn { id: noteBtn; icon: IconCode.NOTE_QUARTER; label: qsTrc("notation", "Note input"); toolTipTitle: qsTrc("notation", "Note input (N)"); accentButton: root.view.isActionChecked("note-input"); onClicked: root.view.dispatchAction("note-input") }
-                ToolBtn { icon: IconCode.MUSIC_NOTES; label: qsTrc("notation", "Write"); toolTipTitle: qsTrc("notation", "Write notation by hand (Ctrl+Alt+W)"); accentButton: root.view.writeModeActive; onClicked: root.view.toggleWriteMode() }
                 ToolBtn { visible: root.view.writeModeActive; icon: IconCode.PLUS; label: qsTrc("notation", "Multi select"); toolTipTitle: qsTrc("notation", "Add to selection (multi-select loops)"); accentButton: root.view.addToSelectionActive; onClicked: root.view.toggleAddToSelection() }
             }
 
@@ -540,11 +539,32 @@ Item {
             }
 
             Section {
-                title: qsTrc("notation", "Draw")
+                title: qsTrc("notation", "Pen mode")
+                // Three mutually exclusive modes, shown as three buttons
+                // rather than two toggles. With only Draw and Write there
+                // was no way to express "neither": turning Draw off left
+                // Write running, so the pen kept drawing and the strip
+                // showed nothing to explain why.
+                ToolBtn {
+                    icon: IconCode.POSITION_ARROWS
+                    label: qsTrc("notation", "Select")
+                    toolTipTitle: qsTrc("notation", "Select and drag with the pen")
+                    accentButton: !root.view.annotationActive && !root.view.writeModeActive
+                    onClicked: root.view.setPointerMode()
+                }
                 ToolBtn { icon: IconCode.BRUSH; label: qsTrc("notation", "Draw"); toolTipTitle: qsTrc("notation", "Draw on the score (Ctrl+Alt+A)"); accentButton: root.view.annotationActive; onClicked: root.view.toggleAnnotation() }
-                ToolBtn { visible: root.view.annotationActive; icon: IconCode.EDIT; label: qsTrc("notation", "Pen"); toolTipTitle: qsTrc("notation", "Pen (P)"); accentButton: root.view.annotationTool === 0; onClicked: root.view.annotationTool = 0 }
-                ToolBtn { visible: root.view.annotationActive; icon: IconCode.LINE_NORMAL; label: qsTrc("notation", "Marker"); toolTipTitle: qsTrc("notation", "Highlighter (H)"); accentButton: root.view.annotationTool === 1; onClicked: root.view.annotationTool = 1 }
-                ToolBtn { visible: root.view.annotationActive; icon: IconCode.CLOSE_X_ROUNDED; label: qsTrc("notation", "Erase"); toolTipTitle: qsTrc("notation", "Eraser (E)"); accentButton: root.view.annotationTool === 2; onClicked: root.view.annotationTool = 2 }
+                ToolBtn { icon: IconCode.MUSIC_NOTES; label: qsTrc("notation", "Write"); toolTipTitle: qsTrc("notation", "Write notation by hand (Ctrl+Alt+W)"); accentButton: root.view.writeModeActive; onClicked: root.view.toggleWriteMode() }
+            }
+
+            Section {
+                // The tools that belong to Draw, and only exist while it
+                // is on -- kept apart from the three modes above so the
+                // mode row is always the same three buttons.
+                title: qsTrc("notation", "Pen")
+                visible: root.view.annotationActive
+                ToolBtn { icon: IconCode.EDIT; label: qsTrc("notation", "Pen"); toolTipTitle: qsTrc("notation", "Pen (P)"); accentButton: root.view.annotationTool === 0; onClicked: root.view.annotationTool = 0 }
+                ToolBtn { icon: IconCode.LINE_NORMAL; label: qsTrc("notation", "Marker"); toolTipTitle: qsTrc("notation", "Highlighter (H)"); accentButton: root.view.annotationTool === 1; onClicked: root.view.annotationTool = 1 }
+                ToolBtn { icon: IconCode.CLOSE_X_ROUNDED; label: qsTrc("notation", "Erase"); toolTipTitle: qsTrc("notation", "Eraser (E)"); accentButton: root.view.annotationTool === 2; onClicked: root.view.annotationTool = 2 }
             }
 
             Section {
