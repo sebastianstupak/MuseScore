@@ -386,17 +386,31 @@ Item {
     // colour, width, clear -- were unreachable. 44px of clearance at the top
     // for the title bar, the same at the bottom so the last button is not
     // flush with the edge.
+    // Worst-case header reservation. Deliberately computed from plain
+    // properties and never from the header's actual size: the header is
+    // sized FROM the flow, so a maxExtent that read the header back would
+    // close the loop flow -> header -> maxExtent -> flow.
+    readonly property real headerReserve: horizontal ? 0 : root.btn * 2 + root.gap * 2
+
     readonly property real maxExtent: !parent ? 1200
         : (horizontal ? Math.max(240, parent.width - 48)
-                      : Math.max(240, parent.height - 96))
+                      : Math.max(240, parent.height - 96 - headerReserve))
 
     Rectangle {
         id: bg
         // childrenRect, not implicitWidth: after Flow has wrapped, this is
         // the area actually occupied. implicit* would describe one
         // unwrapped line and the panel would be the wrong size around it.
-        width: content.childrenRect.width + 8
-        height: content.childrenRect.height + 8
+        // The header is a full-width row of its own, above (or left of)
+        // the wrapping content -- NOT an item inside the Flow. As a Flow
+        // item it was simply the first cell, so as soon as the strip
+        // wrapped, column two began beside it and the Ink toggle ended up
+        // sitting in the header row next to the settings cog. Settings and
+        // tools do not share a row.
+        width: (root.horizontal ? headerRow.width + root.gap : 0)
+               + content.childrenRect.width + 8
+        height: (root.horizontal ? 0 : headerRow.height + root.gap)
+                + content.childrenRect.height + 8
         radius: 8
         color: ui.theme.backgroundPrimaryColor
         border.width: 1
@@ -406,6 +420,71 @@ Item {
         onHeightChanged: Qt.callLater(root.reportGeometry)
 
         MouseArea { anchors.fill: parent }   // absorb clicks on the strip body
+
+        // Strip header: a grip you drag, and a button that opens the
+        // dock menu. These used to be the same control -- two dots
+        // that moved the strip when dragged and opened a menu when
+        // tapped. Nothing on screen said either was possible, and the
+        // two gestures on one 12px target meant a slightly draggy tap
+        // did the wrong one.
+        Item {
+            id: headerRow
+            x: 4
+            y: 4
+
+            // Side by side when the strip is wide enough for two, stacked
+            // when it is not. Measured against the FLOW's width, not one
+            // cell: the header spans the whole strip now, so at two
+            // columns there is room for both even though a single cell is
+            // narrower than the pair.
+            readonly property bool stacked: !root.horizontal
+                                            && content.childrenRect.width < root.btn * 2 + 2
+
+            width: root.horizontal ? root.btn * 2 : content.childrenRect.width
+            height: root.horizontal
+                    ? Math.max(root.btn, content.childrenRect.height)
+                    : (stacked ? root.btn * 2 + root.gap : root.btn)
+
+            Item {
+                id: handle
+                anchors.left: parent.left
+                anchors.top: parent.top
+                width: root.btn
+                height: root.btn
+
+                StyledIconLabel {
+                    anchors.centerIn: parent
+                    iconCode: IconCode.TOOLBAR_GRIP
+                    font: Qt.font({ family: ui.theme.iconsFont.family, pixelSize: root.glyph })
+                    opacity: 0.65
+                }
+                MouseArea {
+                    anchors.fill: parent
+                    cursorShape: Qt.SizeAllCursor
+                    drag.target: root
+                    drag.minimumX: 0
+                    drag.minimumY: 44   // stay below the window title bar (its drag moves the whole window)
+                    drag.maximumX: root.parent ? Math.max(0, root.parent.width - root.width) : 0
+                    drag.maximumY: root.parent ? Math.max(0, root.parent.height - root.height) : 0
+                }
+            }
+
+            FlatButton {
+                id: menuBtn
+                anchors.right: parent.stacked ? undefined : parent.right
+                anchors.left: parent.stacked ? parent.left : undefined
+                y: parent.stacked ? root.btn + root.gap : 0
+                width: root.btn
+                height: root.btn
+                minWidth: 0
+                margins: 0
+                transparent: true
+                icon: IconCode.SETTINGS_COG
+                iconFont: Qt.font({ family: ui.theme.iconsFont.family, pixelSize: root.glyph })
+                toolTipTitle: qsTrc("notation", "Toolbar options")
+                onClicked: root.menuOpen = !root.menuOpen
+            }
+        }
 
         // Flow, not GridLayout. A grid needs to be told how many rows and
         // columns, and the button count is not fixed -- six of these only
@@ -417,73 +496,12 @@ Item {
         // produces is a loop.
         Flow {
             id: content
-            x: 4
-            y: 4
+            x: root.horizontal ? 4 + headerRow.width + root.gap : 4
+            y: root.horizontal ? 4 : 4 + headerRow.height + root.gap
             flow: root.horizontal ? Flow.LeftToRight : Flow.TopToBottom
             width: root.horizontal ? root.maxExtent : childrenRect.width
             height: root.horizontal ? childrenRect.height : root.maxExtent
             spacing: root.gap
-
-            // Strip header: a grip you drag, and a button that opens the
-            // dock menu. These used to be the same control -- two dots
-            // that moved the strip when dragged and opened a menu when
-            // tapped. Nothing on screen said either was possible, and the
-            // two gestures on one 12px target meant a slightly draggy tap
-            // did the wrong one.
-            Item {
-                // Side by side when the cell is wide enough for two, stacked
-                // when it is not. With labels off the cell is exactly one
-                // button wide, and anchoring the grip left and the cog right
-                // inside it put them in the same 28px: the cog drew over the
-                // grip and the strip looked like it had lost its handle.
-                readonly property bool stacked: !root.horizontal
-                                                && root.cellW < root.btn * 2
-
-                width: root.horizontal ? root.btn * 2 : root.cellW
-                height: root.horizontal
-                        ? root.cellH
-                        : (stacked ? root.btn * 2 + root.gap : root.btn)
-
-                Item {
-                    id: handle
-                    anchors.left: parent.left
-                    anchors.top: parent.top
-                    width: root.btn
-                    height: root.btn
-
-                    StyledIconLabel {
-                        anchors.centerIn: parent
-                        iconCode: IconCode.TOOLBAR_GRIP
-                        font: Qt.font({ family: ui.theme.iconsFont.family, pixelSize: root.glyph })
-                        opacity: 0.65
-                    }
-                    MouseArea {
-                        anchors.fill: parent
-                        cursorShape: Qt.SizeAllCursor
-                        drag.target: root
-                        drag.minimumX: 0
-                        drag.minimumY: 44   // stay below the window title bar (its drag moves the whole window)
-                        drag.maximumX: root.parent ? Math.max(0, root.parent.width - root.width) : 0
-                        drag.maximumY: root.parent ? Math.max(0, root.parent.height - root.height) : 0
-                    }
-                }
-
-                FlatButton {
-                    id: menuBtn
-                    anchors.right: parent.stacked ? undefined : parent.right
-                    anchors.left: parent.stacked ? parent.left : undefined
-                    y: parent.stacked ? root.btn + root.gap : 0
-                    width: root.btn
-                    height: root.btn
-                    minWidth: 0
-                    margins: 0
-                    transparent: true
-                    icon: IconCode.SETTINGS_COG
-                    iconFont: Qt.font({ family: ui.theme.iconsFont.family, pixelSize: root.glyph })
-                    toolTipTitle: qsTrc("notation", "Toolbar options")
-                    onClicked: root.menuOpen = !root.menuOpen
-                }
-            }
 
             Section {
                 title: qsTrc("notation", "Play")
