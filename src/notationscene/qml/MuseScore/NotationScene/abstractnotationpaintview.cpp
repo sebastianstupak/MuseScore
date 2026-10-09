@@ -25,6 +25,7 @@
 #include <QFile>
 #include <QPainter>
 #include <QMimeData>
+#include <QTouchEvent>
 
 #include "async/async.h"
 
@@ -64,6 +65,11 @@ AbstractNotationPaintView::AbstractNotationPaintView(QQuickItem* parent)
     setFlag(ItemHasContents, true);
     setFlag(ItemAcceptsDrops, true);
     setAcceptedMouseButtons(Qt::AllButtons);
+    // Required for the branch in event() above: with this false, Qt never
+    // delivers a touch event here -- it synthesises a mouse press from the
+    // first finger instead, and a two-finger gesture is indistinguishable
+    // from a pen stroke.
+    setAcceptTouchEvents(true);
 
     connect(this, &QQuickPaintedItem::widthChanged, this, &AbstractNotationPaintView::onViewSizeChanged);
     connect(this, &QQuickPaintedItem::heightChanged, this, &AbstractNotationPaintView::onViewSizeChanged);
@@ -1952,6 +1958,34 @@ bool AbstractNotationPaintView::event(QEvent* event)
     }
 
     QEvent::Type eventType = event->type();
+
+    // Multi-finger gestures belong to the PinchArea that wraps this view,
+    // not to the pen handlers.
+    //
+    // Without accepting touch at all -- which is how this started -- Qt
+    // synthesises a MOUSE event from the first touch point and delivers it
+    // to mousePressEvent(), which in Draw mode begins a line. The second
+    // finger never becomes a pinch because the gesture has already been
+    // eaten as a mouse, so two-finger panning did nothing and left ink
+    // behind: the status report read strokes:2 after a pan attempt.
+    //
+    // So: accept touch, handle a SINGLE point the way a pen is handled by
+    // letting it fall through to synthesis, and ignore anything with two
+    // or more points so it propagates to the PinchArea.
+    if (eventType == QEvent::TouchBegin || eventType == QEvent::TouchUpdate
+        || eventType == QEvent::TouchEnd || eventType == QEvent::TouchCancel) {
+        if (QTouchEvent* te = static_cast<QTouchEvent*>(event)) {
+            if (te->points().size() > 1) {
+                if (eventType == QEvent::TouchBegin) {
+                    cancelCurrentStroke();   // the first finger already drew
+                }
+                event->ignore();
+                return false;
+            }
+        }
+        return QQuickPaintedItem::event(event);
+    }
+
     auto keyEvent = dynamic_cast<QKeyEvent*>(event);
 
     bool isContextMenuEvent = ((eventType == QEvent::ShortcutOverride && keyEvent->key() == Qt::Key_Menu)
