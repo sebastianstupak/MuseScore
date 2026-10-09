@@ -79,6 +79,11 @@ class AbstractNotationPaintView : public muse::uicomponents::QuickPaintedView, p
     Q_PROPERTY(bool annotationCanUndo READ annotationCanUndo NOTIFY annotationStateChanged)
     Q_PROPERTY(bool annotationCanRedo READ annotationCanRedo NOTIFY annotationStateChanged)
     Q_PROPERTY(bool writeModeActive READ writeModeActive WRITE setWriteModeActive NOTIFY annotationStateChanged)
+    // Properties, not plain invokables: the Read button's label counts the
+    // pending strokes, and a Q_INVOKABLE is called once and never again --
+    // the count would freeze at whatever it was when the strip was built.
+    Q_PROPERTY(bool batchWriteActive READ batchWriteActive WRITE setBatchWriteActive NOTIFY annotationStateChanged)
+    Q_PROPERTY(int pendingStrokeCount READ pendingStrokeCount NOTIFY annotationStateChanged)
     Q_PROPERTY(bool addToSelectionActive READ addToSelectionActive WRITE setAddToSelectionActive NOTIFY annotationStateChanged)
 
     muse::GlobalInject<INotationConfiguration> notationConfiguration;
@@ -94,6 +99,7 @@ class AbstractNotationPaintView : public muse::uicomponents::QuickPaintedView, p
     int m_tbX = 0, m_tbY = 0, m_tbW = 0, m_tbH = 0, m_tbCols = 0, m_tbWinW = 0, m_tbWinH = 0;
     bool m_tbMenuOpen = false;
     bool m_tbLabels = true;
+    bool m_batchWrite = false;
     QString m_tbButtons;   // "focus=x,y;save=x,y;..." in the same units as the box
 
 public:
@@ -123,6 +129,11 @@ public:
     bool annotationCanUndo() const;
     bool annotationCanRedo() const;
 
+    bool batchWriteActive() const;
+    void setBatchWriteActive(bool active);
+    int pendingStrokeCount() const;
+    Q_INVOKABLE void recognizePending();
+    Q_INVOKABLE void discardPending();
     Q_INVOKABLE void panViewByPixels(qreal dxPx, qreal dyPx);
     Q_INVOKABLE void cancelCurrentStroke();
     Q_INVOKABLE void setPointerMode();

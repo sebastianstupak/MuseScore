@@ -281,6 +281,18 @@ int StrokeRecognizer::recognizeAndApply(const std::vector<std::vector<muse::Poin
         if (r.type == "put_note" && noteInput) {
             const muse::PointF pos(r.at.x(), r.at.y());
             if (!noteInput->isNoteInputMode()) {
+                // Seat the selection where the pen is BEFORE entering note
+                // input. startNoteInput() calls
+                // resolveNoteInputStartPosition(), which falls back to the
+                // current selection or the first element in the score, and
+                // then selects it -- and selecting scrolls. Draw a note in
+                // bar 40 with nothing selected and the view jumped to bar
+                // 1, which is the "view jumps sometimes" people see: it
+                // happens on the FIRST note of a session and after
+                // anything that clears the selection, not on every note.
+                if (mu::engraving::EngravingItem* under = interaction->hitElement(pos, 10.0)) {
+                    interaction->select({ under }, mu::engraving::SelectType::SINGLE);
+                }
                 noteInput->startNoteInput();   // enter note input; pitch derived from pos.y
             }
             noteInput->padNote(padFromString(r.duration));

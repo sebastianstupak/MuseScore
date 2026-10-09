@@ -1339,7 +1339,7 @@ void AbstractNotationPaintView::writeAnnotationStatus()
         // the tap meant for the dock handle hit a tool button, which the
         // test then reported as "the popover did not open".
         const QString s = QString("{\"annotationMode\":%1,\"strokes\":%2,"
-                                  "\"writeMode\":%13,"
+                                  "\"writeMode\":%13,\"batch\":%17,\"pending\":%18,"
                                   "\"canvas\":{\"x\":%14,\"y\":%15,\"scale\":%16},"
                                   "\"toolbar\":{\"x\":%3,\"y\":%4,\"w\":%5,\"h\":%6,\"cols\":%7,"
                                   "\"winw\":%8,\"winh\":%9,\"menu\":%10,\"labels\":%11,"
@@ -1353,7 +1353,9 @@ void AbstractNotationPaintView::writeAnnotationStatus()
                           .arg(m_writeMode ? "true" : "false")
                           .arg(QString::number(m_matrix.dx(), 'f', 2))
                           .arg(QString::number(m_matrix.dy(), 'f', 2))
-                          .arg(QString::number(m_matrix.m11(), 'f', 4));
+                          .arg(QString::number(m_matrix.m11(), 'f', 4))
+                          .arg(m_batchWrite ? "true" : "false")
+                          .arg(int(m_writeStrokes.size()));
         f.write(s.toUtf8());
     }
 }
@@ -1407,6 +1409,50 @@ void AbstractNotationPaintView::setWriteModeActive(bool active)
     emit annotationStateChanged();
 }
 
+bool AbstractNotationPaintView::batchWriteActive() const
+{
+    return m_batchWrite;
+}
+
+void AbstractNotationPaintView::setBatchWriteActive(bool active)
+{
+    if (m_batchWrite == active) {
+        return;
+    }
+    m_batchWrite = active;
+    if (!active) {
+        // Leaving batch mode must not strand what is already drawn.
+        recognizeAccumulated();
+    }
+    writeAnnotationStatus();
+    emit annotationStateChanged();
+}
+
+int AbstractNotationPaintView::pendingStrokeCount() const
+{
+    return int(m_writeStrokes.size());
+}
+
+void AbstractNotationPaintView::recognizePending()
+{
+    if (m_writeTimer) {
+        m_writeTimer->stop();
+    }
+    recognizeAccumulated();
+    emit annotationStateChanged();
+}
+
+void AbstractNotationPaintView::discardPending()
+{
+    m_writeStrokes.clear();
+    if (m_writeTimer) {
+        m_writeTimer->stop();
+    }
+    scheduleRedraw();
+    writeAnnotationStatus();
+    emit annotationStateChanged();
+}
+
 void AbstractNotationPaintView::recognizeAccumulated()
 {
     if (m_writeStrokes.empty()) {
@@ -1418,6 +1464,7 @@ void AbstractNotationPaintView::recognizeAccumulated()
     m_writeStrokes.clear();
     m_writeAdditive = false;
     scheduleRedraw();
+    writeAnnotationStatus();
 }
 
 void AbstractNotationPaintView::onHoldTimeout()
@@ -1795,8 +1842,14 @@ void AbstractNotationPaintView::mouseReleaseEvent(QMouseEvent* event)
                 std::vector<PointF> stroke = m_annotationLayer->takeCurrentStroke();
                 if (!stroke.empty()) {
                     m_writeStrokes.push_back(stroke);   // a symbol (or tap) may span several strokes
+                    emit annotationStateChanged();      // so "Read 3" counts up as you write
                 }
-                if (m_writeTimer) {
+                // In batch mode the strokes pile up until you ask for
+                // them to be read, so a whole bar -- or several -- can be
+                // written and recognised as one go. The 600ms debounce is
+                // right for one symbol at a time and wrong for a phrase:
+                // it fires between notes you have not finished writing.
+                if (!m_batchWrite && m_writeTimer) {
                     m_writeTimer->start(600);   // recognize once the symbol looks finished
                 }
                 m_writeGesture = WriteGesture::None;

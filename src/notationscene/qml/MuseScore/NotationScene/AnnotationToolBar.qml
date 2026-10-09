@@ -147,6 +147,7 @@ Item {
         "Save", "Export", "Undo", "Redo",
         "Note input", "Write", "Multi select",
         "Select", "Draw", "Pen", "Marker", "Erase",
+        "Batch", "Read", "Discard",
         "Undo draw", "Redo draw", "Erase all", "Colour", "Size",
         "More", "Less"
     ]
@@ -556,6 +557,41 @@ Item {
                 }
                 ToolBtn { icon: IconCode.BRUSH; label: qsTrc("notation", "Draw"); toolTipTitle: qsTrc("notation", "Draw on the score (Ctrl+Alt+A)"); accentButton: root.view.annotationActive; onClicked: root.view.toggleAnnotation() }
                 ToolBtn { icon: IconCode.MUSIC_NOTES; label: qsTrc("notation", "Write"); toolTipTitle: qsTrc("notation", "Write notation by hand (Ctrl+Alt+W)"); accentButton: root.view.writeModeActive; onClicked: root.view.toggleWriteMode() }
+            }
+
+            Section {
+                // Write a phrase, then read it. The debounce recognises
+                // one symbol at a time, which is right for a single note
+                // and wrong for a bar: it fires in the gaps while you are
+                // still writing. In batch mode the strokes wait until you
+                // tap Read.
+                title: qsTrc("notation", "Batch")
+                visible: root.view.writeModeActive
+                ToolBtn {
+                    icon: IconCode.MULTIMEASURE_REST
+                    label: qsTrc("notation", "Batch")
+                    toolTipTitle: qsTrc("notation", "Collect strokes until you tap Read")
+                    accentButton: root.view.batchWriteActive
+                    onClicked: { root.view.setBatchWriteActive(!root.view.batchWriteActive); Qt.callLater(root.applyDock) }
+                }
+                ToolBtn {
+                    visible: root.view.batchWriteActive
+                    icon: IconCode.TICK_RIGHT_ANGLE
+                    label: root.view.pendingStrokeCount > 0
+                           ? qsTrc("notation", "Read %1").arg(root.view.pendingStrokeCount)
+                           : qsTrc("notation", "Read")
+                    enabled: root.view.pendingStrokeCount > 0
+                    toolTipTitle: qsTrc("notation", "Recognise everything drawn so far")
+                    onClicked: root.view.recognizePending()
+                }
+                ToolBtn {
+                    visible: root.view.batchWriteActive
+                    icon: IconCode.DELETE_TANK
+                    label: qsTrc("notation", "Discard")
+                    enabled: root.view.pendingStrokeCount > 0
+                    toolTipTitle: qsTrc("notation", "Throw away the strokes without recognising them")
+                    onClicked: root.view.discardPending()
+                }
             }
 
             Section {
