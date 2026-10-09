@@ -47,6 +47,27 @@ using namespace mu;
 using namespace mu::project;
 using namespace mu::notation;
 using namespace muse;
+
+// One OS process per score is MuseScore's desktop design: opening a second
+// score, or File > New with one already open, starts another copy of the
+// whole application. On this tablet that is wrong in a way the user cannot
+// see or undo -- every extra instance also brings up its own emulated Muse
+// Sounds bridge and competes for the single ALSA device, and the window
+// manager shows one window at a time, so the copies are invisible as well
+// as expensive. Three taps on "New score" left three editors running and
+// three samplers fighting over the audio.
+//
+// STYLUS_SINGLE_WINDOW keeps everything in this process. The guards that
+// used to spawn now close the current score first -- through
+// closeOpenedProject(), which runs the ordinary "save your changes?"
+// prompt and reports a cancel, so replacing a score can never silently
+// discard one.
+static bool singleWindowMode()
+{
+    static const bool on = qEnvironmentVariableIsSet("STYLUS_SINGLE_WINDOW");
+    return on;
+}
+
 using namespace muse::actions;
 
 static const muse::Uri NOTATION_PAGE_URI("musescore://notation");
@@ -265,15 +286,21 @@ Ret ProjectActionsController::openProject(const muse::io::path_t& givenPath, con
     //! Step 4. Check, if a any project is already open in the current window,
     //! then create a new instance
     if (globalContext()->currentProject()) {
-        QStringList args;
-        args << actualPath.toQString();
+        if (singleWindowMode()) {
+            if (!closeOpenedProject(false)) {
+                return make_ret(Ret::Code::Ok);   // the user cancelled the save prompt
+            }
+        } else {
+            QStringList args;
+            args << actualPath.toQString();
 
-        if (!displayNameOverride.isEmpty()) {
-            args << "--score-display-name-override" << displayNameOverride;
+            if (!displayNameOverride.isEmpty()) {
+                args << "--score-display-name-override" << displayNameOverride;
+            }
+
+            multiwindowsProvider()->openNewWindow(args);
+            return make_ret(Ret::Code::Ok);
         }
-
-        multiwindowsProvider()->openNewWindow(args);
-        return make_ret(Ret::Code::Ok);
     }
 
     //! Step 5. If it's a cloud project, download the latest version
@@ -613,15 +640,21 @@ Ret ProjectActionsController::openScoreFromMuseScoreCom(const QUrl& url)
 
     // Check if this instance already has an open project
     if (globalContext()->currentProject()) {
-        QStringList args;
-        args << url.toString();
+        if (singleWindowMode()) {
+            if (!closeOpenedProject(false)) {
+                return muse::make_ok();           // the user cancelled the save prompt
+            }
+        } else {
+            QStringList args;
+            args << url.toString();
 
-        if (!scoreInfo.val.title.isEmpty()) {
-            args << "--score-display-name-override" << scoreInfo.val.title;
+            if (!scoreInfo.val.title.isEmpty()) {
+                args << "--score-display-name-override" << scoreInfo.val.title;
+            }
+
+            multiwindowsProvider()->openNewWindow(args);
+            return muse::make_ok();
         }
-
-        multiwindowsProvider()->openNewWindow(args);
-        return muse::make_ok();
     }
 
     QUrlQuery query(url);
@@ -693,14 +726,20 @@ void ProjectActionsController::newProject()
     };
 
     if (globalContext()->currentProject()) {
-        if (multiwindowsProvider()->isHasWindowWithoutProject()) {
-            multiwindowsProvider()->activateWindowWithoutProject({ "file-new" });
+        if (singleWindowMode()) {
+            if (!closeOpenedProject(false)) {
+                return;                           // the user cancelled the save prompt
+            }
+        } else {
+            if (multiwindowsProvider()->isHasWindowWithoutProject()) {
+                multiwindowsProvider()->activateWindowWithoutProject({ "file-new" });
+                return;
+            }
+            QStringList args;
+            args << "--session-type" << "start-with-new";
+            multiwindowsProvider()->openNewWindow(args);
             return;
         }
-        QStringList args;
-        args << "--session-type" << "start-with-new";
-        multiwindowsProvider()->openNewWindow(args);
-        return;
     }
 
     auto promise = interactive()->open(NEW_SCORE_URI);
