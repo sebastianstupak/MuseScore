@@ -431,14 +431,25 @@ Item {
             // two gestures on one 12px target meant a slightly draggy tap
             // did the wrong one.
             Item {
+                // Side by side when the cell is wide enough for two, stacked
+                // when it is not. With labels off the cell is exactly one
+                // button wide, and anchoring the grip left and the cog right
+                // inside it put them in the same 28px: the cog drew over the
+                // grip and the strip looked like it had lost its handle.
+                readonly property bool stacked: !root.horizontal
+                                                && root.cellW < root.btn * 2
+
                 width: root.horizontal ? root.btn * 2 : root.cellW
-                height: root.horizontal ? root.cellH : root.btn
+                height: root.horizontal
+                        ? root.cellH
+                        : (stacked ? root.btn * 2 + root.gap : root.btn)
 
                 Item {
                     id: handle
                     anchors.left: parent.left
+                    anchors.top: parent.top
                     width: root.btn
-                    height: parent.height
+                    height: root.btn
 
                     StyledIconLabel {
                         anchors.centerIn: parent
@@ -459,9 +470,11 @@ Item {
 
                 FlatButton {
                     id: menuBtn
-                    anchors.right: parent.right
+                    anchors.right: parent.stacked ? undefined : parent.right
+                    anchors.left: parent.stacked ? parent.left : undefined
+                    y: parent.stacked ? root.btn + root.gap : 0
                     width: root.btn
-                    height: parent.height
+                    height: root.btn
                     minWidth: 0
                     margins: 0
                     transparent: true
@@ -512,7 +525,7 @@ Item {
                 title: qsTrc("notation", "Draw")
                 ToolBtn { icon: IconCode.BRUSH; label: qsTrc("notation", "Draw"); toolTipTitle: qsTrc("notation", "Draw on the score (Ctrl+Alt+A)"); accentButton: root.view.annotationActive; onClicked: root.view.toggleAnnotation() }
                 ToolBtn { visible: root.view.annotationActive; icon: IconCode.EDIT; label: qsTrc("notation", "Pen"); toolTipTitle: qsTrc("notation", "Pen (P)"); accentButton: root.view.annotationTool === 0; onClicked: root.view.annotationTool = 0 }
-                ToolBtn { visible: root.view.annotationActive; icon: IconCode.MARKER; label: qsTrc("notation", "Marker"); toolTipTitle: qsTrc("notation", "Highlighter (H)"); accentButton: root.view.annotationTool === 1; onClicked: root.view.annotationTool = 1 }
+                ToolBtn { visible: root.view.annotationActive; icon: IconCode.LINE_NORMAL; label: qsTrc("notation", "Marker"); toolTipTitle: qsTrc("notation", "Highlighter (H)"); accentButton: root.view.annotationTool === 1; onClicked: root.view.annotationTool = 1 }
                 ToolBtn { visible: root.view.annotationActive; icon: IconCode.CLOSE_X_ROUNDED; label: qsTrc("notation", "Erase"); toolTipTitle: qsTrc("notation", "Eraser (E)"); accentButton: root.view.annotationTool === 2; onClicked: root.view.annotationTool = 2 }
             }
 
