@@ -338,7 +338,9 @@ Item {
                                    "focus=" + btnCentre(focusBtn)
                                    + ";save=" + btnCentre(saveBtn)
                                    + ";note=" + btnCentre(noteBtn)
-                                   + ";handle=" + btnCentre(menuBtn))
+                                   + ";handle=" + btnCentre(menuBtn)
+                                   + ";zoomin=" + btnCentre(zoomInBtn)
+                                   + ";more=" + btnCentre(moreBtn))
     }
     onXChanged: Qt.callLater(reportGeometry)
     onYChanged: Qt.callLater(reportGeometry)
@@ -534,7 +536,7 @@ Item {
                 title: qsTrc("notation", "View")
                 ToolBtn { id: focusBtn; icon: root.focusMode ? IconCode.EYE_OPEN : IconCode.EYE_CLOSED; label: qsTrc("notation", "Hide panels"); toolTipTitle: qsTrc("notation", "Focus mode — hide panels and toolbars"); accentButton: root.focusMode; onClicked: root.setFocusMode(!root.focusMode) }
                 ToolBtn { visible: root.showMore; icon: IconCode.ZOOM_OUT; label: qsTrc("notation", "Zoom out"); toolTipTitle: qsTrc("notation", "Zoom out"); onClicked: root.view.dispatchAction("zoomout") }
-                ToolBtn { visible: root.showMore; icon: IconCode.ZOOM_IN; label: qsTrc("notation", "Zoom in"); toolTipTitle: qsTrc("notation", "Zoom in"); onClicked: root.view.dispatchAction("zoomin") }
+                ToolBtn { id: zoomInBtn; visible: root.showMore; icon: IconCode.ZOOM_IN; label: qsTrc("notation", "Zoom in"); toolTipTitle: qsTrc("notation", "Zoom in"); onClicked: root.view.dispatchAction("zoomin") }
                 ToolBtn { visible: root.showMore; icon: IconCode.PAGE_VIEW; label: qsTrc("notation", "Page view"); toolTipTitle: qsTrc("notation", "Page / continuous view"); onClicked: root.view.toggleViewMode() }
             }
 
@@ -651,6 +653,7 @@ Item {
             Section {
                 title: ""
                 ToolBtn {
+                    id: moreBtn
                     icon: root.showMore ? IconCode.SMALL_ARROW_UP : IconCode.SMALL_ARROW_DOWN
                     label: root.showMore ? qsTrc("notation", "Less") : qsTrc("notation", "More")
                     accentButton: root.showMore
