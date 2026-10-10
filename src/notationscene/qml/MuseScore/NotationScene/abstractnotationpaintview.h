@@ -130,7 +130,7 @@ public:
     bool annotationCanRedo() const;
 
     bool batchWriteActive() const;
-    void setBatchWriteActive(bool active);
+    Q_INVOKABLE void setBatchWriteActive(bool active);
     int pendingStrokeCount() const;
     Q_INVOKABLE void recognizePending();
     Q_INVOKABLE void discardPending();

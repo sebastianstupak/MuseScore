@@ -576,7 +576,7 @@ Item {
                     label: qsTrc("notation", "Batch")
                     toolTipTitle: qsTrc("notation", "Collect strokes until you tap Read")
                     accentButton: root.view.batchWriteActive
-                    onClicked: { root.view.setBatchWriteActive(!root.view.batchWriteActive); Qt.callLater(root.applyDock) }
+                    onClicked: { root.view.batchWriteActive = !root.view.batchWriteActive; Qt.callLater(root.applyDock) }
                 }
                 ToolBtn {
                     id: readBtn
