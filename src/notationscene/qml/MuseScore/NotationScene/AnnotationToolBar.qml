@@ -341,7 +341,10 @@ Item {
                                    + ";note=" + btnCentre(noteBtn)
                                    + ";handle=" + btnCentre(menuBtn)
                                    + ";zoomin=" + btnCentre(zoomInBtn)
-                                   + ";more=" + btnCentre(moreBtn))
+                                   + ";more=" + btnCentre(moreBtn)
+                                   + ";write=" + btnCentre(writeBtn)
+                                   + ";batch=" + btnCentre(batchBtn)
+                                   + ";read=" + btnCentre(readBtn))
     }
     onXChanged: Qt.callLater(reportGeometry)
     onYChanged: Qt.callLater(reportGeometry)
@@ -556,7 +559,7 @@ Item {
                     onClicked: root.view.setPointerMode()
                 }
                 ToolBtn { icon: IconCode.BRUSH; label: qsTrc("notation", "Draw"); toolTipTitle: qsTrc("notation", "Draw on the score (Ctrl+Alt+A)"); accentButton: root.view.annotationActive; onClicked: root.view.toggleAnnotation() }
-                ToolBtn { icon: IconCode.MUSIC_NOTES; label: qsTrc("notation", "Write"); toolTipTitle: qsTrc("notation", "Write notation by hand (Ctrl+Alt+W)"); accentButton: root.view.writeModeActive; onClicked: root.view.toggleWriteMode() }
+                ToolBtn { id: writeBtn; icon: IconCode.MUSIC_NOTES; label: qsTrc("notation", "Write"); toolTipTitle: qsTrc("notation", "Write notation by hand (Ctrl+Alt+W)"); accentButton: root.view.writeModeActive; onClicked: root.view.toggleWriteMode() }
             }
 
             Section {
@@ -568,6 +571,7 @@ Item {
                 title: qsTrc("notation", "Batch")
                 visible: root.view.writeModeActive
                 ToolBtn {
+                    id: batchBtn
                     icon: IconCode.MULTIMEASURE_REST
                     label: qsTrc("notation", "Batch")
                     toolTipTitle: qsTrc("notation", "Collect strokes until you tap Read")
@@ -575,6 +579,7 @@ Item {
                     onClicked: { root.view.setBatchWriteActive(!root.view.batchWriteActive); Qt.callLater(root.applyDock) }
                 }
                 ToolBtn {
+                    id: readBtn
                     visible: root.view.batchWriteActive
                     icon: IconCode.TICK_RIGHT_ANGLE
                     label: root.view.pendingStrokeCount > 0
