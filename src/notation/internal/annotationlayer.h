@@ -22,6 +22,7 @@
 #ifndef MU_NOTATION_ANNOTATIONLAYER_H
 #define MU_NOTATION_ANNOTATIONLAYER_H
 
+#include <cstddef>
 #include <cstdint>
 #include <vector>
 
@@ -79,6 +80,19 @@ public:
     int strokeCount() const { return static_cast<int>(m_strokes.size()); }
 
     void paint(muse::draw::Painter* painter);
+
+    // Bounding box of the TAIL of the in-progress stroke, in score-logical
+    // coordinates, already padded by the pen width. The paint view uses it as
+    // a damage rect so that appending a point repaints a few hundred pixels
+    // instead of the whole canvas.
+    //
+    // It covers the last `n` points rather than only the newest segment, and
+    // that is load-bearing: the display curve is Catmull-Rom, where segment i
+    // is defined by points i-1..i+2, so appending a point changes the curve
+    // over the PRECEDING segments too. Damaging only the newest one leaves the
+    // previous bend stale on screen -- visible as a kinked stroke that
+    // straightens out the next time something else forces a full repaint.
+    muse::RectF currentTailBBox(std::size_t n = 4) const;
 
     // Write mode: take the in-progress gesture's points without committing it as
     // ink (the caller hands them to recognition instead).
