@@ -64,6 +64,23 @@ AbstractNotationPaintView::AbstractNotationPaintView(QQuickItem* parent)
 {
     setFlag(ItemHasContents, true);
     setFlag(ItemAcceptsDrops, true);
+
+    // Tell the scene graph this item paints every pixel it covers.
+    //
+    // Without it the item's pixmap keeps an alpha channel and the software
+    // renderer treats the canvas as translucent, which on this device costs
+    // real work every frame: QSGAbstractSoftwareRenderer only adds OPAQUE
+    // nodes to m_obscuredRegion, only subtracts an opaque node's area from
+    // m_dirtyRegion for the nodes below it, and only skips painting the
+    // window background when the obscured region covers it. A fullscreen
+    // notation canvas that is in fact opaque therefore pays for blending,
+    // for a background nobody can see, and for nodes it completely covers.
+    //
+    // Safe because paint() begins with paintBackground(rect, painter), which
+    // fills the whole clip rect before anything else is drawn, and the node
+    // keeps its pixmap between frames so regions outside the clip retain what
+    // was there.
+    setOpaquePainting(true);
     setAcceptedMouseButtons(Qt::AllButtons);
     // Required for the branch in event() above: with this false, Qt never
     // delivers a touch event here -- it synthesises a mouse press from the
