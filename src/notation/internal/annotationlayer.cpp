@@ -425,10 +425,38 @@ muse::RectF AnnotationLayer::currentTailBBox(std::size_t n) const
     return r;
 }
 
-void AnnotationLayer::paint(muse::draw::Painter* painter)
+muse::RectF AnnotationLayer::strokeBBox(const Stroke& stroke)
+{
+    if (stroke.points.empty()) {
+        return muse::RectF();
+    }
+    double x0 = stroke.points[0].x(), x1 = x0;
+    double y0 = stroke.points[0].y(), y1 = y0;
+    for (const muse::PointF& p : stroke.points) {
+        x0 = std::min(x0, p.x());
+        x1 = std::max(x1, p.x());
+        y0 = std::min(y0, p.y());
+        y1 = std::max(y1, p.y());
+    }
+    muse::RectF r(x0 + stroke.xlate.x(), y0 + stroke.xlate.y(), x1 - x0, y1 - y0);
+    r.pad(stroke.width);
+    return r;
+}
+
+void AnnotationLayer::paint(muse::draw::Painter* painter, const muse::RectF& clip)
 {
     recomputeAnchorsIfNeeded();
     for (const Stroke& stroke : m_strokes) {
+        // Fitting the display spline is the expensive part of drawStroke --
+        // smoothForDisplay() plus a PainterPath per stroke, every frame. With
+        // the ink path now damaging only a few hundred pixels, redoing that
+        // for ink nowhere near the damaged area is the remaining per-frame
+        // cost, and it grows with everything already written on the page.
+        // The bbox walk is O(points) with no allocation, so it is far cheaper
+        // than the fit it skips.
+        if (clip.isValid() && !strokeBBox(stroke).intersects(clip)) {
+            continue;
+        }
         drawStroke(painter, stroke);
     }
     if (m_drawing) {
