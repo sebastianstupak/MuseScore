@@ -1251,6 +1251,17 @@ void AbstractNotationPaintView::scheduleRedraw(const muse::RectF& rect)
         } else {
             ++nInvalid;
         }
+        if (!rect.isValid()) {
+            // Identify the caller without a backtrace. The return address is
+            // PIE-relocated, so log it as a DELTA from a file-static function
+            // in this same translation unit; the same delta can then be added
+            // to that symbol's address in the unstripped build and fed to
+            // addr2line. Guessing which of the 32 no-argument call sites fires
+            // is exactly what this avoids.
+            const char* ret = static_cast<const char*>(__builtin_return_address(0));
+            const char* anchor = reinterpret_cast<const char*>(&compensateFloatPart);
+            LOGI() << "REDRAWFULL delta=" << static_cast<long long>(ret - anchor);
+        }
         if ((n++ % 50) == 0) {
             LOGI() << "REDRAW valid=" << nValid << " invalid=" << nInvalid
                    << " lastrect=" << rect.width() << "x" << rect.height();
