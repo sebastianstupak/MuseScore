@@ -376,6 +376,7 @@ private:
     std::unique_ptr<LoopMarker> m_loopOutMarker;
     std::unique_ptr<ContinuousPanel> m_continuousPanel;
     AnnotationLayer* m_annotationLayer = nullptr;   // owned by the current Notation, not by the view
+    bool m_fullRedrawPending = false;               // a full redraw deferred until the pen lifts
     std::unique_ptr<StrokeRecognizer> m_strokeRecognizer;
     bool m_annotationMode = false;
     bool m_writeMode = false;   // pen gestures -> recognized notation (via neume)
