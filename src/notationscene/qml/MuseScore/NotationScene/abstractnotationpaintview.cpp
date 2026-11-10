@@ -726,8 +726,27 @@ void AbstractNotationPaintView::paint(QPainter* qp)
 {
     TRACEFUNC;
 
-    RectF rect = RectF::fromQRectF(qp->clipBoundingRect());
-    rect = correctDrawRect(rect);
+    RectF rawClip = RectF::fromQRectF(qp->clipBoundingRect());
+    RectF rect = correctDrawRect(rawClip);
+
+    // Count partial vs full paints. Before the pen-down/pen-up damage rects
+    // this read total=40 partial=0 -- every frame repainted the whole canvas
+    // because a full-view request at each end of the stroke was OR-ed into the
+    // frame's dirty rect. If those two are genuinely gone, partial should now
+    // be most of them, and the per-frame cost should fall towards the ~26.3 ms
+    // tick the pipeline actually runs at.
+    if (qEnvironmentVariableIsSet("STYLUS_PAINT_LOG")) {
+        static int total = 0, partial = 0;
+        ++total;
+        if (rawClip.isValid() && (rawClip.width() < width() || rawClip.height() < height())) {
+            ++partial;
+        }
+        if ((total % 10) == 0) {
+            LOGI() << "PAINTCLIP total=" << total << " partial=" << partial
+                   << " lastraw=" << rawClip.width() << "x" << rawClip.height()
+                   << " view=" << width() << "x" << height();
+        }
+    }
 
     muse::draw::Painter mup(qp, objectName().toStdString());
     muse::draw::Painter* painter = &mup;
