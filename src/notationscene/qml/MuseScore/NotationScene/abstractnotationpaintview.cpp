@@ -64,6 +64,20 @@ AbstractNotationPaintView::AbstractNotationPaintView(QQuickItem* parent)
 {
     setFlag(ItemHasContents, true);
     setFlag(ItemAcceptsDrops, true);
+
+    // Retested deliberately. On its own this measured nothing (p>0.2), but
+    // that comparison ran against a build where 0% of paints were clipped, so
+    // every frame was dominated by a full repaint and per-frame compositing
+    // was a rounding error. With the damage rects now surviving on ~60% of
+    // frames, each frame is ~3x cheaper and compositing the item's full-size
+    // pixmap is a much larger share of what remains -- which is the condition
+    // under which this can actually show up.
+    //
+    // QSGAbstractSoftwareRenderer only adds OPAQUE nodes to m_obscuredRegion,
+    // only subtracts an opaque node's area from m_dirtyRegion for the nodes
+    // below it, and only skips the window background once the obscured region
+    // covers it. The canvas paints every pixel it covers, so it qualifies.
+    setOpaquePainting(true);
     setAcceptedMouseButtons(Qt::AllButtons);
     // Required for the branch in event() above: with this false, Qt never
     // delivers a touch event here -- it synthesises a mouse press from the
