@@ -79,7 +79,9 @@ public:
 
     int strokeCount() const { return static_cast<int>(m_strokes.size()); }
 
-    void paint(muse::draw::Painter* painter);
+    // `clip`, in score-logical coordinates, skips strokes that cannot be
+    // visible. Pass an invalid rect to draw everything.
+    void paint(muse::draw::Painter* painter, const muse::RectF& clip = muse::RectF());
 
     // Bounding box of the TAIL of the in-progress stroke, in score-logical
     // coordinates, already padded by the pen width. The paint view uses it as
@@ -141,6 +143,7 @@ private:
     };
 
     void drawStroke(muse::draw::Painter* painter, const Stroke& stroke) const;
+    static muse::RectF strokeBBox(const Stroke& stroke);   // padded by the pen width
     void computeAnchor(Stroke& stroke) const;   // resolve anchor at draw time
     void recomputeAnchorsIfNeeded();            // refresh cached translations after relayout
     void restoreStrokes(std::vector<Stroke> strokes);   // used by the undo command
