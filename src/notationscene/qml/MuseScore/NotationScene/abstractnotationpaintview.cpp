@@ -1235,6 +1235,28 @@ bool AbstractNotationPaintView::doMoveCanvas(qreal dx, qreal dy)
 
 void AbstractNotationPaintView::scheduleRedraw(const muse::RectF& rect)
 {
+    // Who is asking for a full repaint?
+    //
+    // Every paint measured full-view (PAINTCLIP partial=0/40), so the damage
+    // rect never survives. QQuickPaintedItem::update() ORs each request into
+    // one dirty rect until the next paint, and correctDrawRect() turns an
+    // INVALID rect into the whole view -- so a single no-argument
+    // scheduleRedraw() per frame is enough to swallow every small rect. This
+    // counts the two kinds of caller instead of guessing which of the 32
+    // no-argument call sites is firing.
+    if (qEnvironmentVariableIsSet("STYLUS_PAINT_LOG")) {
+        static int nValid = 0, nInvalid = 0, n = 0;
+        if (rect.isValid()) {
+            ++nValid;
+        } else {
+            ++nInvalid;
+        }
+        if ((n++ % 50) == 0) {
+            LOGI() << "REDRAW valid=" << nValid << " invalid=" << nInvalid
+                   << " lastrect=" << rect.width() << "x" << rect.height();
+        }
+    }
+
     QRect qrect = correctDrawRect(rect).toQRect();
     update(qrect);
 }
