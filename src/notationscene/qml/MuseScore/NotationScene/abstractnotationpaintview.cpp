@@ -1788,11 +1788,33 @@ void AbstractNotationPaintView::mouseMoveEvent(QMouseEvent* event)
             dragMoveTo(toLogical(event->pos()));   // long-press grab -> move the element
             return;
         }
+        // Repaint only what the pen just touched.
+        //
+        // `scheduleRedraw()` with no rect means correctDrawRect() returns the
+        // whole view, so every pen sample re-rasters the entire engraved page
+        // on the software backend. Measured on a Note Air 4C (runbook 13):
+        // ~240 ms from nib-down to the first frame, and exactly ONE frame per
+        // 340 ms stroke where an idle canvas manages nine. The shadow note
+        // already takes this damage-rect path; ink simply never did.
+        auto redrawLogical = [this](const RectF& logicalRect) {
+            if (!logicalRect.isValid()) {
+                scheduleRedraw();   // unknown damage: fall back to the whole view
+                return;
+            }
+            RectF r = fromLogical(logicalRect);
+            compensateFloatPart(r);
+            scheduleRedraw(r);
+        };
+
         if (!m_writeMode && m_annotationTool == AnnotationEraser) {
             if (m_erasing && m_annotationLayer) {
                 const PointF logical = toLogical(event->pos());
                 if (pageByPoint(logical)) {
-                    m_annotationLayer->eraseAt(logical, qMax(m_penWidth * 1.5, 20.0));
+                    const double radius = qMax(m_penWidth * 1.5, 20.0);
+                    m_annotationLayer->eraseAt(logical, radius);
+                    // An erase removes whole strokes that intersect the nib, so
+                    // the damage is not the nib: it is whatever those strokes
+                    // covered, which we do not know here. Repaint everything.
                     scheduleRedraw();
                 }
             }
@@ -1808,7 +1830,7 @@ void AbstractNotationPaintView::mouseMoveEvent(QMouseEvent* event)
             const PointF logical = toLogical(event->pos());
             if (pageByPoint(logical)) {
                 m_annotationLayer->appendPoint(logical);
-                scheduleRedraw();
+                redrawLogical(m_annotationLayer->currentTailBBox());
             }
         }
         return;
