@@ -726,8 +726,27 @@ void AbstractNotationPaintView::paint(QPainter* qp)
 {
     TRACEFUNC;
 
-    RectF rect = RectF::fromQRectF(qp->clipBoundingRect());
-    rect = correctDrawRect(rect);
+    RectF rawClip = RectF::fromQRectF(qp->clipBoundingRect());
+    RectF rect = correctDrawRect(rawClip);
+
+    // Diagnostic, env-gated, every 30th paint so a stroke produces a few lines
+    // and not a flood.
+    //
+    // The question it answers: does a damaged repaint actually arrive here as
+    // a SMALL clip, or does Qt hand the painter no clip at all? correctDrawRect()
+    // expands a null rect to the whole view, so the two cases are indistinguishable
+    // downstream -- and if it is the second one, then skipping strokes that miss
+    // the clip can never skip anything (which is exactly what the clip-aware
+    // patch measured), and the damage-rect win comes from the scene graph rather
+    // than from a cheaper paintView().
+    if (qEnvironmentVariableIsSet("STYLUS_PAINT_LOG")) {
+        static int paintCount = 0;
+        if ((paintCount++ % 30) == 0) {
+            LOGI() << "PAINTCLIP raw=" << rawClip.width() << "x" << rawClip.height()
+                   << " corrected=" << rect.width() << "x" << rect.height()
+                   << " view=" << width() << "x" << height();
+        }
+    }
 
     muse::draw::Painter mup(qp, objectName().toStdString());
     muse::draw::Painter* painter = &mup;
