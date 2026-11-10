@@ -1207,6 +1207,25 @@ bool AbstractNotationPaintView::doMoveCanvas(qreal dx, qreal dy)
 
 void AbstractNotationPaintView::scheduleRedraw(const muse::RectF& rect)
 {
+    // While the pen is down, drop full-view redraw requests and remember that
+    // one is owed.
+    //
+    // Measured on a Note Air 4C: one stroke produces 40 damage rects of about
+    // 18x5 units and 11 requests with no rect. correctDrawRect() expands those
+    // to the whole view, QQuickPaintedItem ORs every request into a single
+    // dirty rect until the next paint, and only ~3 frames land per stroke --
+    // so every frame catches one and NOT ONE PAINT IN FORTY is partial. The
+    // damage rects are computed correctly and then thrown away.
+    //
+    // Deferring is safe for the duration of a stroke: nothing that asks for a
+    // full repaint here (theme, colours, notation changed, matrix) can alter
+    // what the user is looking at mid-stroke in a way that must be shown
+    // before the pen lifts, and the pending redraw is serviced on pen-up.
+    if (!rect.isValid() && m_annotationLayer && m_annotationLayer->isDrawing()) {
+        m_fullRedrawPending = true;
+        return;
+    }
+
     QRect qrect = correctDrawRect(rect).toQRect();
     update(qrect);
 }
@@ -1891,6 +1910,10 @@ void AbstractNotationPaintView::mouseReleaseEvent(QMouseEvent* event)
             }
         } else if (m_annotationLayer) {
             m_annotationLayer->endStroke();
+            if (m_fullRedrawPending) {
+                m_fullRedrawPending = false;
+                scheduleRedraw();   // pay back what was deferred during the stroke
+            }
             if (const INotationPtr n = notation()) {
                 m_annotationLayer->endUndoableEdit(n->undoStack());   // one command per stroke
             }
