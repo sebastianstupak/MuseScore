@@ -22,6 +22,7 @@
 
 #include "annotationlayer.h"
 
+#include <QtGlobal>
 #include <QJsonArray>
 #include <QJsonDocument>
 #include <QJsonObject>
@@ -41,6 +42,8 @@
 #include <vector>
 
 #include "draw/types/painterpath.h"
+
+#include "log.h"
 
 // NOTE (4.7 port): engraving/editing/transaction/{transaction,undoablecommand}.h
 // do not exist on 4.7 -- the Transaction/UndoableCommand framework is new in 5.0.
@@ -445,6 +448,9 @@ muse::RectF AnnotationLayer::strokeBBox(const Stroke& stroke)
 
 void AnnotationLayer::paint(muse::draw::Painter* painter, const muse::RectF& clip)
 {
+    // Counts for the env-gated diagnostic below: a skip that never skips
+    // anything and a skip that saves nothing look identical from outside.
+    int skipped = 0, drawn = 0;
     recomputeAnchorsIfNeeded();
     for (const Stroke& stroke : m_strokes) {
         // Fitting the display spline is the expensive part of drawStroke --
@@ -455,12 +461,22 @@ void AnnotationLayer::paint(muse::draw::Painter* painter, const muse::RectF& cli
         // The bbox walk is O(points) with no allocation, so it is far cheaper
         // than the fit it skips.
         if (clip.isValid() && !strokeBBox(stroke).intersects(clip)) {
+            ++skipped;
             continue;
         }
+        ++drawn;
         drawStroke(painter, stroke);
     }
     if (m_drawing) {
         drawStroke(painter, m_current);
+    }
+
+    if (qEnvironmentVariableIsSet("STYLUS_PAINT_LOG")) {
+        static int n = 0;
+        if ((n++ % 30) == 0) {
+            LOGI() << "INKPAINT drawn=" << drawn << " skipped=" << skipped
+                   << " clip=" << clip.width() << "x" << clip.height();
+        }
     }
 }
 
