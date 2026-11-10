@@ -778,7 +778,7 @@ void AbstractNotationPaintView::paint(QPainter* qp)
     if (m_annotationLayer) {
         // Re-assert the score transform so ink is drawn in logical coords on top.
         painter->setWorldTransform(m_matrix * guiScalingCompensation);
-        m_annotationLayer->paint(painter);
+        m_annotationLayer->paint(painter, toLogical(rect));
 
         // Write mode: preview the accumulated (multi-stroke) gesture until it is
         // recognized, so a symbol drawn in several strokes stays visible.
