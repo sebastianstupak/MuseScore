@@ -740,10 +740,19 @@ void AbstractNotationPaintView::paint(QPainter* qp)
     // patch measured), and the damage-rect win comes from the scene graph rather
     // than from a cheaper paintView().
     if (qEnvironmentVariableIsSet("STYLUS_PAINT_LOG")) {
-        static int paintCount = 0;
-        if ((paintCount++ % 30) == 0) {
-            LOGI() << "PAINTCLIP raw=" << rawClip.width() << "x" << rawClip.height()
-                   << " corrected=" << rect.width() << "x" << rect.height()
+        // Count how many paints are PARTIAL rather than logging a sample of
+        // them. Sampling every 30th frame showed three full-view clips and
+        // invited the conclusion that the damage rect never survives, which
+        // does not square with the damage-rect build measuring 25% faster.
+        // The fraction is the thing to know.
+        static int total = 0, partial = 0;
+        ++total;
+        if (rawClip.isValid() && (rawClip.width() < width() || rawClip.height() < height())) {
+            ++partial;
+        }
+        if ((total % 20) == 0) {
+            LOGI() << "PAINTCLIP total=" << total << " partial=" << partial
+                   << " lastraw=" << rawClip.width() << "x" << rawClip.height()
                    << " view=" << width() << "x" << height();
         }
     }
