@@ -37,6 +37,7 @@
 #include "engraving/dom/system.h"
 #include "engraving/style/style.h"
 
+#include <algorithm>
 #include <vector>
 
 #include "draw/types/painterpath.h"
@@ -398,6 +399,30 @@ void AnnotationLayer::drawStroke(muse::draw::Painter* painter, const Stroke& str
         path.cubicTo(c1, c2, p2);
     }
     painter->drawPath(path);
+}
+
+muse::RectF AnnotationLayer::currentTailBBox(std::size_t n) const
+{
+    if (!m_drawing || m_current.points.empty()) {
+        return muse::RectF();
+    }
+    const std::size_t count = m_current.points.size();
+    const std::size_t start = count > n ? count - n : 0;
+    double x0 = m_current.points[start].x(), x1 = x0;
+    double y0 = m_current.points[start].y(), y1 = y0;
+    for (std::size_t i = start + 1; i < count; ++i) {
+        const muse::PointF& p = m_current.points[i];
+        x0 = std::min(x0, p.x());
+        x1 = std::max(x1, p.x());
+        y0 = std::min(y0, p.y());
+        y1 = std::max(y1, p.y());
+    }
+    muse::RectF r(x0, y0, x1 - x0, y1 - y0);
+    // The nib is drawn with a round cap of `width`, and the smoothed spline can
+    // bow outside the bbox of the samples themselves. One full width covers
+    // both, cheaply -- this rect only has to be CORRECT and small, not tight.
+    r.pad(m_current.width);
+    return r;
 }
 
 void AnnotationLayer::paint(muse::draw::Painter* painter)
