@@ -307,6 +307,8 @@ private:
     bool doMoveCanvas(qreal dx, qreal dy);
 
     void scheduleRedraw(const muse::RectF& rect = muse::RectF());
+    // Damage a rect given in SCORE-LOGICAL coordinates (converts + compensates).
+    void scheduleRedrawLogical(const muse::RectF& logicalRect);
     muse::RectF correctDrawRect(const muse::RectF& rect) const;
 
     // Input

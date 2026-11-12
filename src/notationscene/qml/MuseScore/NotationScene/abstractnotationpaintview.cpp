@@ -1205,6 +1205,17 @@ bool AbstractNotationPaintView::doMoveCanvas(qreal dx, qreal dy)
     return true;
 }
 
+void AbstractNotationPaintView::scheduleRedrawLogical(const muse::RectF& logicalRect)
+{
+    if (!logicalRect.isValid()) {
+        scheduleRedraw();   // unknown damage: fall back to the whole view
+        return;
+    }
+    RectF r = fromLogical(logicalRect);
+    compensateFloatPart(r);
+    scheduleRedraw(r);
+}
+
 void AbstractNotationPaintView::scheduleRedraw(const muse::RectF& rect)
 {
     QRect qrect = correctDrawRect(rect).toQRect();
@@ -1768,7 +1779,12 @@ void AbstractNotationPaintView::mousePressEvent(QMouseEvent* event)
                 m_annotationLayer->setWidth(w);
                 m_annotationLayer->beginStroke(logical);
             }
-            scheduleRedraw();
+            // Damage the nib, not the canvas. Resolving the full-view redraws
+            // that were swallowing the move path's damage rects showed three
+            // per stroke, and two of them are here and in the release handler:
+            // with only ~3 frames landing per stroke, a full repaint at each
+            // end leaves almost no frame able to be partial.
+            scheduleRedrawLogical(m_annotationLayer->currentTailBBox());
             writeAnnotationStatus();
             emit annotationStateChanged();
         }
@@ -1796,16 +1812,6 @@ void AbstractNotationPaintView::mouseMoveEvent(QMouseEvent* event)
         // ~240 ms from nib-down to the first frame, and exactly ONE frame per
         // 340 ms stroke where an idle canvas manages nine. The shadow note
         // already takes this damage-rect path; ink simply never did.
-        auto redrawLogical = [this](const RectF& logicalRect) {
-            if (!logicalRect.isValid()) {
-                scheduleRedraw();   // unknown damage: fall back to the whole view
-                return;
-            }
-            RectF r = fromLogical(logicalRect);
-            compensateFloatPart(r);
-            scheduleRedraw(r);
-        };
-
         if (!m_writeMode && m_annotationTool == AnnotationEraser) {
             if (m_erasing && m_annotationLayer) {
                 const PointF logical = toLogical(event->pos());
@@ -1830,7 +1836,7 @@ void AbstractNotationPaintView::mouseMoveEvent(QMouseEvent* event)
             const PointF logical = toLogical(event->pos());
             if (pageByPoint(logical)) {
                 m_annotationLayer->appendPoint(logical);
-                redrawLogical(m_annotationLayer->currentTailBBox());
+                scheduleRedrawLogical(m_annotationLayer->currentTailBBox());
             }
         }
         return;
@@ -1853,6 +1859,11 @@ void AbstractNotationPaintView::mouseDoubleClickEvent(QMouseEvent* event)
 void AbstractNotationPaintView::mouseReleaseEvent(QMouseEvent* event)
 {
     if (isInited() && (m_annotationMode || m_writeMode)) {
+        // Set only by the ink path, and only then is the damage known: an erase
+        // removes whole strokes whose extent is not tracked here, and write
+        // mode consumes the gesture, so both of those still repaint in full.
+        RectF finishedStroke;
+
         if (m_writeMode) {
             if (m_holdTimer) {
                 m_holdTimer->stop();
@@ -1890,12 +1901,21 @@ void AbstractNotationPaintView::mouseReleaseEvent(QMouseEvent* event)
                 }
             }
         } else if (m_annotationLayer) {
+            // Capture the stroke's extent BEFORE committing it: once endStroke()
+            // runs there is no stroke in progress to ask about, and the final
+            // rendering can differ slightly from the in-progress one, so this
+            // area genuinely needs repainting -- just this area.
+            finishedStroke = m_annotationLayer->currentTailBBox(SIZE_MAX);
             m_annotationLayer->endStroke();
             if (const INotationPtr n = notation()) {
                 m_annotationLayer->endUndoableEdit(n->undoStack());   // one command per stroke
             }
         }
-        scheduleRedraw();
+        if (finishedStroke.isValid()) {
+            scheduleRedrawLogical(finishedStroke);
+        } else {
+            scheduleRedraw();
+        }
         writeAnnotationStatus();
         emit annotationStateChanged();
         return;
