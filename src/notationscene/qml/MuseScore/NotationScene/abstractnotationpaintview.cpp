@@ -623,6 +623,28 @@ void AbstractNotationPaintView::onShowItemRequested(const INotationInteraction::
 
     RectF viewRect = viewport();
 
+    // THE PEN IS ON THE TARGET. Do not move the page under the hand.
+    //
+    // Placing a note calls startNoteInput(), which ends in showItem() on the
+    // resolved start element, and that scrolls. For keyboard entry that is
+    // the right behaviour -- it follows a cursor you cannot see. For pen
+    // entry it is the opposite: the thing being shown is the thing the nib
+    // is touching, so the only possible effect is to yank the score away
+    // mid-stroke. Measured on the device: one recognised notehead moved the
+    // canvas by 638 x 289 logical px, about 1400 x 650 screen px at working
+    // zoom, which is most of the screen and makes continuous writing
+    // impossible.
+    if (m_penHoldsViewport) {
+        return;
+    }
+
+    // And in general: never scroll to something already fully on screen.
+    // This is the same guard without the mode flag, and it also covers the
+    // case where the request arrives a moment after the pen gesture is done.
+    if (viewRect.contains(request.showRect)) {
+        return;
+    }
+
     RectF showRect = request.showRect;
     RectF itemBoundingRect = request.item->canvasBoundingRect();
 
@@ -1481,12 +1503,19 @@ void AbstractNotationPaintView::recognizeAccumulated()
         return;
     }
     if (m_strokeRecognizer && m_annotationLayer && notation()) {
+        // Hold the viewport across the whole apply. Everything inside here
+        // runs because the pen touched the page, so nothing inside here has
+        // any business scrolling it -- see onShowItemRequested.
+        m_penHoldsViewport = true;
+
         // m_batchWrite -> region: what batch accumulates is a PHRASE, and the
         // recognizer has to be told so. Asked to name several symbols as one
         // gesture it answers `erase`; asked for a region it segments them and
         // returns an intent each.
         m_strokeRecognizer->recognizeAndApply(m_writeStrokes, notation(), m_annotationLayer->spatium(), m_writeAdditive,
                                               m_batchWrite);
+
+        m_penHoldsViewport = false;
     }
     m_writeStrokes.clear();
     m_writeAdditive = false;

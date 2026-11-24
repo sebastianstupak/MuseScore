@@ -390,6 +390,7 @@ private:
     muse::PointF m_dragOffset;                                 // grabbed element's offset at grab time
     bool m_addToSelection = false;                             // sticky "Shift": additive lasso
     bool m_writeAdditive = false;                              // additive state captured at gesture end
+    bool m_penHoldsViewport = false;                           // see onShowItemRequested: pen input must not scroll
     bool m_penBarrelDown = false;                              // pen barrel/side button (from tabletEvent)
     AnnotationTool m_annotationTool = AnnotationPen;
     QColor m_penColor = QColor(224, 48, 48);   // current pen colour
