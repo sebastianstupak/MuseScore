@@ -44,8 +44,14 @@ public:
     // lasso ADDs to the current selection instead of replacing it. Also auto-logs
     // each classified, applied symbol as an "accepted" correction sample (the
     // flywheel's unverified-positive path) via `neume record`.
+    //
+    // `region` says the strokes are a PHRASE of several symbols rather than one
+    // gesture, which is what batch mode accumulates. It is not an optimisation:
+    // without it the recognizer is asked to name the whole phrase as a single
+    // shape, and three noteheads in a row are a wide zig-zag, which means erase.
+    // See 64-batch-recognize-e2e and runbook 10 in the boox repo.
     int recognizeAndApply(const std::vector<std::vector<muse::PointF> >& strokes, const INotationPtr& notation,
-                          double spatium, bool additive = false);
+                          double spatium, bool additive = false, bool region = false);
 
 private:
     QByteArray runNeume(const QByteArray& inputJson) const;

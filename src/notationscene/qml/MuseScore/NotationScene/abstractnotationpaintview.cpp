@@ -1436,11 +1436,16 @@ void AbstractNotationPaintView::setBatchWriteActive(bool active)
     if (m_batchWrite == active) {
         return;
     }
-    m_batchWrite = active;
     if (!active) {
-        // Leaving batch mode must not strand what is already drawn.
+        // Leaving batch mode must not strand what is already drawn -- and it
+        // must read what is drawn the way it was WRITTEN. Flush BEFORE
+        // clearing the flag: these strokes were accumulated as a phrase, so
+        // they have to go to the region decoder, and recognizeAccumulated()
+        // reads m_batchWrite to decide that. Clearing first sent a whole bar
+        // out as one gesture, which comes back `erase`.
         recognizeAccumulated();
     }
+    m_batchWrite = active;
     writeAnnotationStatus();
     emit annotationStateChanged();
 }
@@ -1476,7 +1481,12 @@ void AbstractNotationPaintView::recognizeAccumulated()
         return;
     }
     if (m_strokeRecognizer && m_annotationLayer && notation()) {
-        m_strokeRecognizer->recognizeAndApply(m_writeStrokes, notation(), m_annotationLayer->spatium(), m_writeAdditive);
+        // m_batchWrite -> region: what batch accumulates is a PHRASE, and the
+        // recognizer has to be told so. Asked to name several symbols as one
+        // gesture it answers `erase`; asked for a region it segments them and
+        // returns an intent each.
+        m_strokeRecognizer->recognizeAndApply(m_writeStrokes, notation(), m_annotationLayer->spatium(), m_writeAdditive,
+                                              m_batchWrite);
     }
     m_writeStrokes.clear();
     m_writeAdditive = false;

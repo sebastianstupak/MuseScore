@@ -232,7 +232,7 @@ QByteArray StrokeRecognizer::runNeume(const QByteArray& inputJson) const
 }
 
 int StrokeRecognizer::recognizeAndApply(const std::vector<std::vector<muse::PointF> >& strokes, const INotationPtr& notation,
-                                        double spatium, bool additive)
+                                        double spatium, bool additive, bool region)
 {
     if (strokes.empty() || !notation) {
         return 0;
@@ -256,6 +256,15 @@ int StrokeRecognizer::recognizeAndApply(const std::vector<std::vector<muse::Poin
     QJsonObject root;
     root["unit"] = spatium > 0.0 ? spatium : 1.0;
     root["strokes"] = strokesJson;
+    // Batch mode holds several symbols, so ask for the region decoder: it
+    // segments the strokes left to right and returns one intent per symbol.
+    // Sending a phrase without this flag asks "what single thing is this?",
+    // and the answer for three noteheads in a row is `erase` at confidence
+    // 1.000 -- a wide shape with four x-reversals is a scribble. Nothing was
+    // ever deleted by it only because nothing happened to sit under the path.
+    if (region) {
+        root["region"] = true;
+    }
 
     const QByteArray output = runNeume(QJsonDocument(root).toJson(QJsonDocument::Compact));
     if (output.isEmpty()) {
