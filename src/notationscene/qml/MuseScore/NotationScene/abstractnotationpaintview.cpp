@@ -1512,10 +1512,27 @@ void AbstractNotationPaintView::recognizeAccumulated()
         // recognizer has to be told so. Asked to name several symbols as one
         // gesture it answers `erase`; asked for a region it segments them and
         // returns an intent each.
-        m_strokeRecognizer->recognizeAndApply(m_writeStrokes, notation(), m_annotationLayer->spatium(), m_writeAdditive,
-                                              m_batchWrite);
+        const int applied
+            = m_strokeRecognizer->recognizeAndApply(m_writeStrokes, notation(), m_annotationLayer->spatium(),
+                                                    m_writeAdditive, m_batchWrite);
 
         m_penHoldsViewport = false;
+
+        // NOTHING APPLIED -> KEEP THE INK. The recogniser answers plenty of
+        // things this editor cannot place yet (span, rest, barline drops), and
+        // until now each of those ate the gesture: the ink vanished when the
+        // debounce fired, the score did not change, and the writer was left
+        // unable to tell "not recognised" from "recognised and put somewhere I
+        // cannot see". Measured on the device: a dash comes back `span` at
+        // confidence 1.0 and zero pixels change anywhere.
+        //
+        // Leaving the mark on the page is the honest outcome -- it is what the
+        // pen drew, it can be erased, and it is visibly NOT a note.
+        if (applied == 0) {
+            for (const std::vector<PointF>& stroke : m_writeStrokes) {
+                m_annotationLayer->commitStroke(stroke);
+            }
+        }
     }
     m_writeStrokes.clear();
     m_writeAdditive = false;

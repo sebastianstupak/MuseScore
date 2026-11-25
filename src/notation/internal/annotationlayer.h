@@ -98,6 +98,14 @@ public:
     // ink (the caller hands them to recognition instead).
     std::vector<muse::PointF> takeCurrentStroke();
 
+    // ...and give it back, when recognition produced nothing the editor could
+    // apply. Without this the gesture is silently eaten: the ink disappears on
+    // the 600 ms debounce, the score does not change, and the writer is left
+    // with no mark, no note and no way to tell which of the two happened.
+    // Measured: a horizontal dash comes back `span` at confidence 1.0, which
+    // this editor cannot place, and 0 pixels changed anywhere on screen.
+    void commitStroke(std::vector<muse::PointF> points);
+
     // Reflow anchoring: the score this ink belongs to, used to anchor strokes to
     // measures and reproject them after relayout. Set by the owning Notation.
     void setScore(engraving::Score* score);

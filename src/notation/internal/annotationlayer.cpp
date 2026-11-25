@@ -84,6 +84,18 @@ std::vector<muse::PointF> AnnotationLayer::takeCurrentStroke()
     return pts;
 }
 
+void AnnotationLayer::commitStroke(std::vector<muse::PointF> points)
+{
+    if (points.size() < 2) {
+        return;
+    }
+    Stroke s;
+    s.color = m_color;
+    s.width = m_width;
+    s.points = std::move(points);
+    m_strokes.push_back(std::move(s));
+}
+
 void AnnotationLayer::beginStroke(const muse::PointF& logicalPos)
 {
     m_current = Stroke();
