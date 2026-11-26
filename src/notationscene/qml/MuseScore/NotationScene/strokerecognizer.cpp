@@ -283,12 +283,18 @@ int StrokeRecognizer::recognizeAndApply(const std::vector<std::vector<muse::Poin
     }
     INotationNoteInputPtr noteInput = interaction->noteInput();
 
-    int applied = 0;
-    for (const RecognizerResult& r : results) {
-        mu::engraving::EngravingItem* created = nullptr;
-
-        if (r.type == "put_note" && noteInput) {
-            const muse::PointF pos(r.at.x(), r.at.y());
+    // Apply ONE intent. Returns true if the score changed; `created` is the
+    // element it made, for the flywheel record.
+    //
+    // Split out of the loop below so an intent can be RETRIED with one of
+    // the recognizer's alternatives. See the fall-through after it.
+    auto applyIntent = [&](const QString& type, const QString& label, const QPointF& atPt,
+                           const QString& duration, const QString& element,
+                           const QList<QPointF>& path,
+                           mu::engraving::EngravingItem** created) -> bool {
+        *created = nullptr;
+        if (type == "put_note" && noteInput) {
+            const muse::PointF pos(atPt.x(), atPt.y());
             if (!noteInput->isNoteInputMode()) {
                 // Seat the selection where the pen is BEFORE entering note
                 // input. startNoteInput() calls
@@ -304,41 +310,91 @@ int StrokeRecognizer::recognizeAndApply(const std::vector<std::vector<muse::Poin
                 }
                 noteInput->startNoteInput();   // enter note input; pitch derived from pos.y
             }
-            noteInput->padNote(padFromString(r.duration));
+            noteInput->padNote(padFromString(duration));
             noteInput->putNote(pos, /*replace*/ false, /*insert*/ false);
-            created = interaction->selection() ? interaction->selection()->element() : nullptr;
-            ++applied;
-        } else if (r.type == "erase") {
+            *created = interaction->selection() ? interaction->selection()->element() : nullptr;
+            return true;
+        } else if (type == "erase") {
             const float width = float(spatium > 0.0 ? spatium : 1.0);
-            std::vector<EngravingItem*> elems = collectAlongPath(r.path, interaction, width);
+            std::vector<EngravingItem*> elems = collectAlongPath(path, interaction, width);
             if (!elems.empty()) {
                 interaction->select(elems);          // REPLACE (default)
                 interaction->deleteSelection();      // one undo command
-                ++applied;
+                return true;
             }
-        } else if (r.type == "lasso") {
-            std::vector<EngravingItem*> elems = collectInPolygon(r.path, interaction, spatium);
+        } else if (type == "lasso") {
+            std::vector<EngravingItem*> elems = collectInPolygon(path, interaction, spatium);
             if (!elems.empty()) {
                 // additive -> accumulate across loops; otherwise replace.
                 interaction->select(elems, additive ? mu::engraving::SelectType::ADD : mu::engraving::SelectType::REPLACE);
-                ++applied;
+                return true;
             }
-        } else if (r.type == "drop") {
-            const muse::PointF pos(r.at.x(), r.at.y());
+        } else if (type == "drop") {
+            const muse::PointF pos(atPt.x(), atPt.y());
             mu::engraving::Score* score = notation->elements() ? notation->elements()->msScore() : nullptr;
-            if (applyDrop(r.element, pos, interaction, score)) {
-                created = interaction->selection() ? interaction->selection()->element() : nullptr;
-                ++applied;
+            if (applyDrop(element, pos, interaction, score)) {
+                *created = interaction->selection() ? interaction->selection()->element() : nullptr;
+                return true;
             }
         } else {
-            LOGI() << "stylus: intent '" << r.type << "' not applied";
+            LOGI() << "stylus: intent '" << type << "' not applied";
+        }
+        (void)label;
+        return false;
+    };
+
+    int applied = 0;
+    for (const RecognizerResult& r : results) {
+        mu::engraving::EngravingItem* created = nullptr;
+        QString usedLabel = r.label;
+        bool fellThrough = false;
+
+        bool ok = applyIntent(r.type, r.label, r.at, r.duration, r.element, r.path, &created);
+
+        // FALL THROUGH TO SOMETHING THIS EDITOR CAN ACTUALLY PLACE.
+        //
+        // Half the vocabulary has no apply path here -- rest, span,
+        // articulate, and every drop that is not an accidental or a clef --
+        // and when the top answer is one of those the gesture silently does
+        // nothing. That is not a rare corner: measured by sweeping a
+        // notehead's size and aspect at 800%, EVERY round oval comes back
+        // `drop element=dot` at 0.79-0.83, a dot drop is unimplemented, and
+        // Whole-Note is sitting in second place at 0.14-0.32. A hand-drawn
+        // notehead is often round. "I drew a note and nothing happened" is
+        // that, exactly.
+        //
+        // The rule is deliberately narrow: an intent that COULD be applied
+        // is never second-guessed, however low its confidence. The
+        // alternatives are consulted only when the editor would otherwise
+        // drop the gesture on the floor, and then in the recognizer's own
+        // order of preference -- this picks the best answer it can act on,
+        // it does not pick a different answer.
+        if (!ok) {
+            for (const RecognizerAlt& alt : r.alternatives) {
+                if (alt.type == r.type && alt.element == r.element && alt.label == r.label) {
+                    continue;   // the one that just failed
+                }
+                if (applyIntent(alt.type, alt.label, alt.at,
+                                alt.duration.isEmpty() ? r.duration : alt.duration,
+                                alt.element, r.path, &created)) {
+                    LOGI() << "stylus: '" << r.label << "' (" << r.confidence
+                           << ") cannot be placed; used '" << alt.label << "' (" << alt.p << ")";
+                    usedLabel = alt.label;
+                    fellThrough = true;
+                    ok = true;
+                    break;
+                }
+            }
+        }
+        if (ok) {
+            ++applied;
         }
 
         // Flywheel: auto-log an "accepted" sample for a classified symbol we applied.
         // (Unverified positive — the design's default-on capture; explicit
         // tap-to-correct will later produce "corrected"/"confirmed" records.)
-        if (created && !r.label.isEmpty()) {
-            if (const TaxonEntry* tx = taxonByHomusLabel(r.label)) {
+        if (created && !usedLabel.isEmpty()) {
+            if (const TaxonEntry* tx = taxonByHomusLabel(usedLabel)) {
                 CorrectionContext ctx = extractContext(created);
                 RecordMeta meta;
                 meta.createdBucket = QDate::currentDate().toString("yyyy-MM");
@@ -352,7 +408,13 @@ int StrokeRecognizer::recognizeAndApply(const std::vector<std::vector<muse::Poin
                     }
                     qstrokes.append(one);
                 }
-                recordCorrection(buildCorrectionRecord(qstrokes, r, ctx, "accepted",
+                // "corrected", not "accepted", when the fall-through fired.
+                // The recognizer said one thing and the editor placed
+                // another; logging that as an acceptance would teach the
+                // model that a round notehead IS a dot, which is the
+                // opposite of what just happened.
+                recordCorrection(buildCorrectionRecord(qstrokes, r, ctx,
+                                                       fellThrough ? "corrected" : "accepted",
                                                        taxonLabelObject(*tx), /*inModelVocab*/ true, meta));
             }
         }
