@@ -38,6 +38,20 @@ QList<RecognizerResult> mu::notation::parseRecognizerOutput(const QByteArray& js
             const QJsonObject t = tv.toObject();
             r.topk.append(RecTopk{ t.value("label").toString(), t.value("p").toDouble() });
         }
+        for (const QJsonValue& av : o.value("alternatives").toArray()) {
+            const QJsonObject a = av.toObject();
+            RecognizerAlt alt;
+            alt.type = a.value("type").toString();
+            alt.label = a.value("label").toString();
+            alt.p = a.value("p").toDouble();
+            const QJsonObject aat = a.value("at").toObject();
+            alt.at = QPointF(aat.value("x").toDouble(), aat.value("y").toDouble());
+            alt.duration = a.value("duration").toString();
+            alt.element = a.value("element").toString();
+            if (!alt.type.isEmpty()) {
+                r.alternatives.append(alt);
+            }
+        }
         for (const QJsonValue& iv : o.value("stroke_indices").toArray()) {
             r.strokeIndices.append(iv.toInt());
         }
