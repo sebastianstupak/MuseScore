@@ -47,6 +47,35 @@
 
 using namespace mu;
 using namespace mu::notation;
+
+// HOW LONG THE PEN HAS TO BE OFF THE PAGE before a gesture is read.
+//
+// It was 600 ms, hardcoded, and that was essentially the entire latency of
+// handwriting. Measured on the device, pen-up to a note in the score:
+//
+//     600 ms   the debounce
+//       3 ms   neume, start to finish
+//       6 ms   a second `neume record` spawn, 94 ms later
+//
+// 98% of the wait was this one number. It exists because a symbol can be
+// several strokes -- a sharp is three -- and reading the first one alone
+// gives a barline. But 600 ms is far longer than the gap INSIDE a symbol:
+// handwriting research and our own traces put that at 50-150 ms, while the
+// gap between symbols is 300 ms and up.
+//
+// 180 ms sits in that gap. STYLUS_WRITE_SETTLE_MS overrides it, so the
+// number can be tuned against a real hand on the device without a 40
+// minute rebuild -- which is the only way anyone will ever find the right
+// value for it.
+static int writeSettleMs()
+{
+    static const int ms = []() {
+        bool ok = false;
+        const int v = qEnvironmentVariable("STYLUS_WRITE_SETTLE_MS").toInt(&ok);
+        return (ok && v >= 0 && v <= 5000) ? v : 180;
+    }();
+    return ms;
+}
 using namespace muse;
 using namespace muse::ui;
 using namespace muse::draw;
@@ -121,6 +150,7 @@ void AbstractNotationPaintView::load()
         });
     }
     m_strokeRecognizer = std::make_unique<StrokeRecognizer>();
+    LOGI() << "stylus: write settle " << writeSettleMs() << " ms";
     m_writeTimer = new QTimer(this);
     m_writeTimer->setSingleShot(true);
     connect(m_writeTimer, &QTimer::timeout, this, [this]() { recognizeAccumulated(); });
@@ -1945,7 +1975,7 @@ void AbstractNotationPaintView::mouseReleaseEvent(QMouseEvent* event)
                 // right for one symbol at a time and wrong for a phrase:
                 // it fires between notes you have not finished writing.
                 if (!m_batchWrite && m_writeTimer) {
-                    m_writeTimer->start(600);   // recognize once the symbol looks finished
+                    m_writeTimer->start(writeSettleMs());
                 }
                 m_writeGesture = WriteGesture::None;
             }

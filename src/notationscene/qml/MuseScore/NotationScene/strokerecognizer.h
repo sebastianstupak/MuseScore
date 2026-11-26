@@ -56,7 +56,9 @@ public:
 private:
     QByteArray runNeume(const QByteArray& inputJson) const;
 
-    // Send a correction record (schema-1 JSON) to `neume record`. Returns true on ack.
+    // Send a correction record (schema-1 JSON) to `neume record`. FIRE AND
+    // FORGET -- returns true once the process has been asked to start.
+    // Nobody waits for the answer, and this used to block the GUI thread.
     bool recordCorrection(const QByteArray& recordJson) const;
 };
 }

@@ -379,18 +379,25 @@ bool StrokeRecognizer::recordCorrection(const QByteArray& recordJson) const
         return false;
     }
 
-    QProcess proc;
-    proc.start(bin, QStringList() << "record");
-    if (!proc.waitForStarted(3000)) {
-        LOGE() << "stylus: failed to start neume record";
-        return false;
-    }
-    proc.write(recordJson);
-    proc.closeWriteChannel();
-    if (!proc.waitForFinished(5000)) {
-        LOGE() << "stylus: neume record timed out";
-        proc.kill();
-        return false;
-    }
-    return QJsonDocument::fromJson(proc.readAllStandardOutput()).object().value("ok").toBool(false);
+    // FIRE AND FORGET. This is the training flywheel's unverified-positive
+    // capture: nobody is waiting for its answer, and it ran synchronously
+    // on the GUI thread, 94 ms after the gesture was applied, for 6 ms.
+    // Six milliseconds is not much; blocking the thread that draws ink for
+    // any amount of telemetry is still the wrong trade, and it is the kind
+    // of cost that grows quietly as the record gets richer.
+    //
+    // QProcess is parented to nothing and deleted when it finishes, so the
+    // write happens on the event loop rather than here.
+    QProcess* proc = new QProcess();
+    QObject::connect(proc, &QProcess::finished, proc, &QObject::deleteLater);
+    QObject::connect(proc, &QProcess::errorOccurred, proc, [proc]() {
+        LOGW() << "stylus: neume record failed to run";
+        proc->deleteLater();
+    });
+    QObject::connect(proc, &QProcess::started, proc, [proc, recordJson]() {
+        proc->write(recordJson);
+        proc->closeWriteChannel();
+    });
+    proc->start(bin, QStringList() << "record");
+    return true;
 }
