@@ -1563,6 +1563,10 @@ void AbstractNotationPaintView::recognizeAccumulated()
                 m_annotationLayer->commitStroke(stroke);
             }
         }
+        // The gesture is decided: either it became music, or the ink above
+        // is now real ink. Either way the preview copy has served its
+        // purpose and must go, or it would be drawn twice.
+        m_annotationLayer->clearPreview();
     }
     m_writeStrokes.clear();
     m_writeAdditive = false;
@@ -1967,6 +1971,11 @@ void AbstractNotationPaintView::mouseReleaseEvent(QMouseEvent* event)
                 std::vector<PointF> stroke = m_annotationLayer->takeCurrentStroke();
                 if (!stroke.empty()) {
                     m_writeStrokes.push_back(stroke);   // a symbol (or tap) may span several strokes
+                    // LEAVE IT ON SCREEN until the gesture has been decided.
+                    // takeCurrentStroke() removes it from the layer, so the
+                    // next repaint erases it and the writer watches blank
+                    // paper for the 200 ms it takes the note to arrive.
+                    m_annotationLayer->keepAsPreview(stroke);
                     emit annotationStateChanged();      // so "Read 3" counts up as you write
                 }
                 // In batch mode the strokes pile up until you ask for
@@ -1999,7 +2008,13 @@ void AbstractNotationPaintView::mouseReleaseEvent(QMouseEvent* event)
         }
         if (finishedStroke.isValid()) {
             scheduleRedrawLogical(finishedStroke);
-        } else {
+        } else if (!(m_writeMode && m_annotationLayer && m_annotationLayer->hasPreview())) {
+            // In write mode the preview keeps the pen's own ink on screen,
+            // so there is nothing to repaint here: the pixels are already
+            // right. This branch used to fire a FULL canvas repaint on
+            // every stroke release, purely to erase the ink it had just
+            // drawn -- one e-ink panel update per gesture, spent on making
+            // the page blank.
             scheduleRedraw();
         }
         writeAnnotationStatus();

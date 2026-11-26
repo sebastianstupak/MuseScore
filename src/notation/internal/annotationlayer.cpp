@@ -96,6 +96,23 @@ void AnnotationLayer::commitStroke(std::vector<muse::PointF> points)
     m_strokes.push_back(std::move(s));
 }
 
+void AnnotationLayer::keepAsPreview(const std::vector<muse::PointF>& points)
+{
+    if (points.size() < 2) {
+        return;
+    }
+    Stroke s;
+    s.color = m_color;
+    s.width = m_width;
+    s.points = points;
+    m_preview.push_back(std::move(s));
+}
+
+void AnnotationLayer::clearPreview()
+{
+    m_preview.clear();
+}
+
 void AnnotationLayer::beginStroke(const muse::PointF& logicalPos)
 {
     m_current = Stroke();
@@ -441,6 +458,9 @@ void AnnotationLayer::paint(muse::draw::Painter* painter)
 {
     recomputeAnchorsIfNeeded();
     for (const Stroke& stroke : m_strokes) {
+        drawStroke(painter, stroke);
+    }
+    for (const Stroke& stroke : m_preview) {
         drawStroke(painter, stroke);
     }
     if (m_drawing) {

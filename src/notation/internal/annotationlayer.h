@@ -106,6 +106,29 @@ public:
     // this editor cannot place, and 0 pixels changed anywhere on screen.
     void commitStroke(std::vector<muse::PointF> points);
 
+    // PREVIEW: ink that is still on screen but no longer being drawn.
+    //
+    // Write mode takes the stroke off the layer the moment the pen lifts,
+    // to hand it to the recognizer, and the next repaint therefore erases
+    // it -- leaving the writer looking at blank paper until the note
+    // arrives. Measured on the device, from the pen leaving the page:
+    //
+    //     +5..49 ms   the preview is erased (a FULL canvas repaint)
+    //     +250 ms     the note appears
+    //
+    // Two hundred milliseconds of nothing, which is what "it feels slow"
+    // is made of -- the work was already as fast as MuseScore's own note
+    // entry (+224..237 ms to the first panel update, measured with the
+    // keyboard). Keeping the ink until the note replaces it closes the gap
+    // and saves the repaint that erased it.
+    //
+    // Preview strokes are drawn, never written to the file, and never
+    // counted by strokeCount(): they are not ink, they are the last frame
+    // of a gesture that is still being decided.
+    void keepAsPreview(const std::vector<muse::PointF>& points);
+    void clearPreview();
+    bool hasPreview() const { return !m_preview.empty(); }
+
     // Reflow anchoring: the score this ink belongs to, used to anchor strokes to
     // measures and reproject them after relayout. Set by the owning Notation.
     void setScore(engraving::Score* score);
@@ -156,6 +179,7 @@ private:
     friend class InkEditCommand;
 
     std::vector<Stroke> m_strokes;   // committed strokes
+    std::vector<Stroke> m_preview;   // drawn, not saved: see keepAsPreview
     Stroke m_current;                // stroke in progress
     bool m_drawing = false;
 
