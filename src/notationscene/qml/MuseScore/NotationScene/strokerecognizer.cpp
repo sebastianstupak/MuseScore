@@ -232,7 +232,8 @@ QByteArray StrokeRecognizer::runNeume(const QByteArray& inputJson) const
 }
 
 int StrokeRecognizer::recognizeAndApply(const std::vector<std::vector<muse::PointF> >& strokes, const INotationPtr& notation,
-                                        double spatium, bool additive, bool region)
+                                        double spatium, bool additive, bool region,
+                                        bool notesOnly)
 {
     if (strokes.empty() || !notation) {
         return 0;
@@ -342,6 +343,25 @@ int StrokeRecognizer::recognizeAndApply(const std::vector<std::vector<muse::Poin
         (void)label;
         return false;
     };
+
+    // FAST PATH: is the best thing this editor can place a note? If not,
+    // answer "not now" and let the caller wait for more strokes. Nothing
+    // has been applied at this point, so backing out is free.
+    if (notesOnly) {
+        bool note = false;
+        for (const RecognizerResult& r : results) {
+            if (r.type == "put_note") { note = true; break; }
+            for (const RecognizerAlt& alt : r.alternatives) {
+                if (alt.p >= 0.10 && alt.type == "put_note") { note = true; break; }
+            }
+            if (note) {
+                break;
+            }
+        }
+        if (!note) {
+            return -1;
+        }
+    }
 
     int applied = 0;
     for (const RecognizerResult& r : results) {

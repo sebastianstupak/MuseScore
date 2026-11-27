@@ -1566,6 +1566,36 @@ void AbstractNotationPaintView::discardPending()
     emit annotationStateChanged();
 }
 
+bool AbstractNotationPaintView::tryFastRecognize()
+{
+    if (m_writeStrokes.empty() || !m_strokeRecognizer || !m_annotationLayer || !notation()) {
+        return false;
+    }
+    // One stroke only. Once a gesture is already multi-stroke the writer
+    // is plainly in the middle of something, and guessing at a prefix is
+    // exactly what the settle timer exists to avoid.
+    if (m_writeStrokes.size() != 1) {
+        return false;
+    }
+    m_penHoldsViewport = true;
+    const int applied
+        = m_strokeRecognizer->recognizeAndApply(m_writeStrokes, notation(), m_annotationLayer->spatium(),
+                                                m_writeAdditive, /*region*/ false, /*notesOnly*/ true);
+    m_penHoldsViewport = false;
+    if (applied <= 0) {
+        return false;   // -1 "not a note" or 0 "could not place it": wait.
+    }
+    m_annotationLayer->clearPreview();
+    m_writeStrokes.clear();
+    m_writeAdditive = false;
+    if (m_writeTimer) {
+        m_writeTimer->stop();
+    }
+    scheduleRedraw();
+    writeAnnotationStatus();
+    return true;
+}
+
 void AbstractNotationPaintView::recognizeAccumulated()
 {
     if (m_writeStrokes.empty()) {
@@ -2043,8 +2073,23 @@ void AbstractNotationPaintView::mouseReleaseEvent(QMouseEvent* event)
                 // written and recognised as one go. The 600ms debounce is
                 // right for one symbol at a time and wrong for a phrase:
                 // it fires between notes you have not finished writing.
-                if (!m_batchWrite && m_writeTimer) {
-                    m_writeTimer->start(writeSettleMs());
+                if (!m_batchWrite) {
+                    // ASK NOW. The settle timer is nearly all of the delay
+                    // between lifting the pen and seeing a note -- measured,
+                    // 180 of the ~225 ms -- and it is only there because a
+                    // symbol can be several strokes. A notehead is one
+                    // stroke, and the recognizer answers in 2-8 ms, so the
+                    // common case does not have to wait for the uncommon one.
+                    //
+                    // If it comes back a note, it is placed immediately. If
+                    // it comes back anything else, nothing has happened yet
+                    // and the timer runs as before, so a sharp still gets its
+                    // full window to arrive.
+                    if (tryFastRecognize()) {
+                        // placed; recognizeAccumulated has already cleared up
+                    } else if (m_writeTimer) {
+                        m_writeTimer->start(writeSettleMs());
+                    }
                 }
                 m_writeGesture = WriteGesture::None;
             }

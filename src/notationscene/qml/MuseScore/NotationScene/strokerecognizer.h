@@ -50,8 +50,19 @@ public:
     // without it the recognizer is asked to name the whole phrase as a single
     // shape, and three noteheads in a row are a wide zig-zag, which means erase.
     // See 64-batch-recognize-e2e and runbook 10 in the boox repo.
+    // `notesOnly` is the FAST PATH, and it exists because the settle timer
+    // is nearly all of handwriting's latency. A symbol can be several
+    // strokes -- that is why the timer exists -- but a NOTEHEAD is one
+    // stroke, and neume answers in 2-8 ms. So the editor can ask straight
+    // away, place the note if that is what it is, and only wait out the
+    // settle for answers that might still be the beginning of something.
+    //
+    // With notesOnly set, nothing is applied unless the best applicable
+    // intent is a put_note, and the return is -1 for "not now, keep the
+    // strokes and wait" as distinct from 0 for "nothing applied".
     int recognizeAndApply(const std::vector<std::vector<muse::PointF> >& strokes, const INotationPtr& notation,
-                          double spatium, bool additive = false, bool region = false);
+                          double spatium, bool additive = false, bool region = false,
+                          bool notesOnly = false);
 
 private:
     QByteArray runNeume(const QByteArray& inputJson) const;

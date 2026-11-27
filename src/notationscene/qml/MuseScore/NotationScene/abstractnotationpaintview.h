@@ -360,6 +360,10 @@ private:
 
     void writeAnnotationStatus();   // env-gated status file for automated tests
     void recognizeAccumulated();   // write mode: recognize the accumulated multi-stroke symbol
+    // Ask the recognizer the moment the pen lifts, and place the result
+    // only if it is a note. True when it did; the caller then skips the
+    // settle timer entirely. See the comment in mouseReleaseEvent.
+    bool tryFastRecognize();
     void onHoldTimeout();          // write mode: long-press -> grab the element under the pen
     void dragMoveTo(const muse::PointF& logicalPos);   // move the grabbed element (native drag)
 
