@@ -67,6 +67,31 @@ using namespace mu::notation;
 // number can be tuned against a real hand on the device without a 40
 // minute rebuild -- which is the only way anyone will ever find the right
 // value for it.
+// HOW LONG THE PEN HAS TO BE STILL before a gesture becomes a GRAB.
+//
+// This is the cost of precision work: every nudge of a note starts with a
+// wait, and 450 ms of holding still before anything happens is a long
+// time when the job is "move that note down a line".
+//
+// It cannot simply go to zero. The timer is cancelled by 6 px of
+// movement, so an ordinary stroke is safe however short the hold is --
+// but a gesture SMALLER than 6 px can only win on time, and the dot that
+// writes a quarter note is a 3 px circle. Measured: it takes about
+// 230 ms at the default sample rate, so the hold has to stay above that
+// or a dot stops being a note and starts grabbing whatever is under it.
+//
+// STYLUS_HOLD_MS overrides it, so the trade can be measured against a
+// real hand instead of guessed at.
+static int holdMs()
+{
+    static const int ms = []() {
+        bool ok = false;
+        const int v = qEnvironmentVariable("STYLUS_HOLD_MS").toInt(&ok);
+        return (ok && v >= 50 && v <= 5000) ? v : 450;
+    }();
+    return ms;
+}
+
 static int writeSettleMs()
 {
     static const int ms = []() {
@@ -150,7 +175,7 @@ void AbstractNotationPaintView::load()
         });
     }
     m_strokeRecognizer = std::make_unique<StrokeRecognizer>();
-    LOGI() << "stylus: write settle " << writeSettleMs() << " ms";
+    LOGI() << "stylus: write settle " << writeSettleMs() << " ms, hold " << holdMs() << " ms";
     m_writeTimer = new QTimer(this);
     m_writeTimer->setSingleShot(true);
     connect(m_writeTimer, &QTimer::timeout, this, [this]() { recognizeAccumulated(); });
@@ -1849,7 +1874,7 @@ void AbstractNotationPaintView::mousePressEvent(QMouseEvent* event)
                 m_annotationLayer->setWidth(m_penWidth);
                 m_annotationLayer->beginStroke(logical);
                 if (m_holdTimer) {
-                    m_holdTimer->start(450);
+                    m_holdTimer->start(holdMs());
                 }
             } else if (m_annotationTool == AnnotationEraser) {
                 // Snapshot before the swipe so the whole erase becomes one undo step.
