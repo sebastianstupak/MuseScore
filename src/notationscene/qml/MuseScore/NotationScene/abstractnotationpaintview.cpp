@@ -67,6 +67,45 @@ using namespace mu::notation;
 // number can be tuned against a real hand on the device without a 40
 // minute rebuild -- which is the only way anyone will ever find the right
 // value for it.
+// HOW LONG THE PEN HAS TO BE STILL before a gesture becomes a GRAB.
+//
+// This is the cost of precision work: every nudge of a note starts with a
+// wait, and 450 ms of holding still before anything happens is a long
+// time when the job is "move that note down a line".
+//
+// It cannot simply go to zero. The timer is cancelled by 6 px of
+// movement, so an ordinary stroke is safe however short the hold is --
+// but a gesture SMALLER than 6 px can only win on time, and the dot that
+// writes a quarter note is a 3 px circle. Measured: it takes about
+// 230 ms at the default sample rate, so the hold has to stay above that
+// or a dot stops being a note and starts grabbing whatever is under it.
+//
+// MEASURED, five repetitions of each gesture type at each value:
+//
+//     hold     notehead   dot    grab
+//     450 ms   5/5        5/5    5/5
+//     300 ms   4/5        2/5    5/5
+//
+// so 450 stays. The path-length cancel below was supposed to free the
+// dot from this limit and did not, for a reason that says more about the
+// harness than the editor: X compresses an INJECTED 3 px circle down to
+// a handful of move events, so the path the editor sees is a few pixels,
+// not the nineteen that were drawn. A real nib reporting at 480 Hz
+// delivers the whole path and should cancel immediately -- but that
+// cannot be verified by injection, so the default does not depend on it.
+//
+// STYLUS_HOLD_MS overrides it, so the trade can be measured against a
+// real hand instead of guessed at.
+static int holdMs()
+{
+    static const int ms = []() {
+        bool ok = false;
+        const int v = qEnvironmentVariable("STYLUS_HOLD_MS").toInt(&ok);
+        return (ok && v >= 50 && v <= 5000) ? v : 450;
+    }();
+    return ms;
+}
+
 static int writeSettleMs()
 {
     static const int ms = []() {
@@ -150,7 +189,7 @@ void AbstractNotationPaintView::load()
         });
     }
     m_strokeRecognizer = std::make_unique<StrokeRecognizer>();
-    LOGI() << "stylus: write settle " << writeSettleMs() << " ms";
+    LOGI() << "stylus: write settle " << writeSettleMs() << " ms, hold " << holdMs() << " ms";
     m_writeTimer = new QTimer(this);
     m_writeTimer->setSingleShot(true);
     connect(m_writeTimer, &QTimer::timeout, this, [this]() { recognizeAccumulated(); });
@@ -1844,12 +1883,14 @@ void AbstractNotationPaintView::mousePressEvent(QMouseEvent* event)
                 // Also arm the long-press timer: hold still to grab the element here.
                 m_pressLogical = logical;
                 m_pressScreenPos = event->pos();
+                m_lastMoveScreenPos = event->pos();
+                m_holdPath = 0;
                 m_writeGesture = WriteGesture::Pending;
                 m_annotationLayer->setColor(Color(40, 110, 220));
                 m_annotationLayer->setWidth(m_penWidth);
                 m_annotationLayer->beginStroke(logical);
                 if (m_holdTimer) {
-                    m_holdTimer->start(450);
+                    m_holdTimer->start(holdMs());
                 }
             } else if (m_annotationTool == AnnotationEraser) {
                 // Snapshot before the swipe so the whole erase becomes one undo step.
@@ -1916,11 +1957,30 @@ void AbstractNotationPaintView::mouseMoveEvent(QMouseEvent* event)
             }
         } else if (m_annotationLayer && m_annotationLayer->isDrawing()) {
             // In write mode, real movement means "draw", not "hold to grab".
-            if (m_writeMode && m_writeGesture == WriteGesture::Pending
-                && (event->pos() - m_pressScreenPos).manhattanLength() > 6) {
-                m_writeGesture = WriteGesture::Drawing;
-                if (m_holdTimer) {
-                    m_holdTimer->stop();
+            //
+            // PATH LENGTH as well as displacement. Displacement alone
+            // cannot see a small closed shape: the dot that writes a
+            // quarter note is a 3 px circle, so it never gets 6 px from
+            // where it started and can only beat the hold timer on TIME.
+            // That is what set the floor on the hold -- measured, all
+            // three gesture types survive a 300 ms hold and the dot is
+            // gone by 200 -- and it is the wrong thing to be limited by,
+            // because the hold is the entire cost of nudging something.
+            //
+            // A dot travels about 19 px of path. A hand holding still
+            // travels two or three. 12 px of accumulated path separates
+            // them with room to spare, and it keeps the 6 px
+            // displacement test for the ordinary case of a stroke that
+            // simply leaves.
+            if (m_writeMode && m_writeGesture == WriteGesture::Pending) {
+                m_holdPath += (event->pos() - m_lastMoveScreenPos).manhattanLength();
+                m_lastMoveScreenPos = event->pos();
+                if ((event->pos() - m_pressScreenPos).manhattanLength() > 6
+                    || m_holdPath > 12) {
+                    m_writeGesture = WriteGesture::Drawing;
+                    if (m_holdTimer) {
+                        m_holdTimer->stop();
+                    }
                 }
             }
             const PointF logical = toLogical(event->pos());

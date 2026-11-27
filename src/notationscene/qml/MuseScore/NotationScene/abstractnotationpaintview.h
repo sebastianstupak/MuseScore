@@ -385,7 +385,11 @@ private:
     QTimer* m_writeTimer = nullptr;                            // debounce before recognizing
     QTimer* m_holdTimer = nullptr;                             // long-press -> grab timer
     WriteGesture m_writeGesture = WriteGesture::None;
-    QPoint m_pressScreenPos;                                   // press point (physical px) for move threshold
+    QPoint m_pressScreenPos;                              // press point (physical px) for move threshold
+    // For the hold timer's path-length cancel: a small closed gesture
+    // never gets far from where it started, but it does travel.
+    QPoint m_lastMoveScreenPos;
+    int m_holdPath = 0;
     muse::PointF m_pressLogical;                               // press point (score coords) for hit/drag
     muse::PointF m_dragOffset;                                 // grabbed element's offset at grab time
     bool m_addToSelection = false;                             // sticky "Shift": additive lasso
